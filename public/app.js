@@ -63,7 +63,20 @@ $$('.chatTab').forEach(b=>b.addEventListener('click',()=>{chatMode=b.dataset.cha
 document.addEventListener('click',e=>{const b=e.target.closest('[data-chat-friend]');if(!b)return;chatFriendId=Number(b.dataset.chatFriend);loadChat().catch(err=>msg(err.message));});
 $('#chatForm')?.addEventListener('submit',async e=>{e.preventDefault();try{await sendChat($('#chatInput').value);}catch(err){msg(err.message);}});
 async function loadMailbox(){try{const d=await api('/mailbox');$('#mailUnread').textContent=d.unread;$('#mailUnreadTitle').textContent=d.unread;$('#mailList').innerHTML=d.messages.map(m=>{const p=m.payload||{},reward=m.message_type==='quest_reward';return `<article class="tile mailTile ${m.read_at?'':'unread'}"><div class="icon">${reward?'🎁':'✉️'}</div><h3>${esc(m.title)}</h3><p>${esc(m.body)}</p>${reward?`<div class="mailReward">🎁 ${money(p.exp)} EXP · ${money(p.coin)} Star Coin · ${money(p.point)} Academy Point</div>${m.claimed_at?'<span class="friendTag">✓ Đã nhận thưởng</span>':`<button class="primary" data-claimmail="${m.id}">Nhận phần thưởng</button>`}`:''}<small class="muted">${new Date(m.created_at).toLocaleString('vi-VN')}</small></article>`}).join('')||'<p>Hòm thư hiện chưa có thư.</p>';$$('[data-claimmail]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const d=await api(`/mailbox/${b.dataset.claimmail}/claim`,{method:'POST',body:'{}'});msg(`Đã nhận thưởng: +${d.reward.exp} EXP, +${d.reward.coin} Star Coin.`);await refresh();await loadMailbox();await loadQuests();}catch(e){msg(e.message);b.disabled=false;}});const newlyRead=d.messages.filter(x=>!x.read_at);for(const m of newlyRead)api(`/mailbox/${m.id}/read`,{method:'POST',body:'{}'}).catch(()=>{});if(newlyRead.length){$('#mailUnread').textContent=Math.max(0,d.unread-newlyRead.length);$('#mailUnreadTitle').textContent=Math.max(0,d.unread-newlyRead.length);}}catch(e){msg(e.message)}}
-async function loadRank(){const d=await api('/leaderboard');$('#rankList').innerHTML=`<table class="table"><tr><th>OC</th><th>Chủ nhân</th><th>Level</th><th>EXP</th><th>Nhiệm vụ</th><th>Khám phá</th></tr>${d.rows.map(x=>`<tr><td>${esc(x.avatar)} ${esc(x.name)}</td><td>${esc(x.owner_name)}</td><td>${x.level}</td><td>${money(x.exp)}</td><td>${x.quests_done}</td><td>${x.explored}</td></tr>`).join('')}</table>`;}
+async function loadRank(){
+  const d=await api('/leaderboard');
+  const rows=d.rows||[];
+  $('#rankList').innerHTML=`<div class="rankTableWrap"><table class="table rankTable"><tr><th>OC</th><th>Chủ nhân</th><th>Level</th><th>EXP</th><th>Nhiệm vụ</th><th>Khám phá</th></tr>${rows.map(x=>`<tr><td><div class="rankCharacter">${avatarHtml(x.avatar,'rankAvatar')}<span>${esc(x.name)}</span></div></td><td>${esc(x.owner_name)}</td><td>${x.level}</td><td>${money(x.exp)}</td><td>${x.quests_done}</td><td>${x.explored}</td></tr>`).join('')}</table></div>`||'<p>Chưa có dữ liệu vinh danh.</p>';
+  $$('.rankAvatar').forEach(img=>{
+    if(img.tagName!=='IMG')return;
+    img.addEventListener('error',()=>{
+      const fallback=document.createElement('span');
+      fallback.className='rankAvatar rankAvatarFallback';
+      fallback.textContent='🌟';
+      img.replaceWith(fallback);
+    },{once:true});
+  });
+}
 async function loadAdmin(){if(user.role!=='admin')return;const d=await api('/admin/summary');$('#adminSummary').innerHTML=`<div class="stats">${Object.entries(d).map(([k,v])=>`<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('')}</div>`;}
 $('#newQuest').onsubmit=async e=>{e.preventDefault();try{await api('/admin/quests',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();msg('Đã tạo nhiệm vụ.');overview=await api('/overview');render();}catch(err){msg(err.message)}};
 $('#themeBtn').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('tinh_tu_theme',document.body.classList.contains('dark')?'dark':'light')};
