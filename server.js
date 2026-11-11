@@ -39,6 +39,12 @@ async function migrate(){
  const gameplaySql=fs.readFileSync(path.join(__dirname,'db/migrations/003_gameplay_mailbox.sql'),'utf8');
  await q(gameplaySql);
  await q("INSERT INTO schema_migrations(id) VALUES('003_gameplay_mailbox') ON CONFLICT DO NOTHING");
+
+ // Chat schema: required by /api/chat/global and /api/chat/direct/:userId.
+ // Kept idempotent so existing Render/PostgreSQL databases are upgraded safely.
+ const chatSql=fs.readFileSync(path.join(__dirname,'db/migrations/004_chat.sql'),'utf8');
+ await q(chatSql);
+ await q("INSERT INTO schema_migrations(id) VALUES('004_chat') ON CONFLICT DO NOTHING");
 }
 async function auth(req,res,next){
  try{const h=req.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
