@@ -48,3 +48,81 @@ $('#newQuest').onsubmit=async e=>{e.preventDefault();try{await api('/admin/quest
 $('#themeBtn').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('tinh_tu_theme',document.body.classList.contains('dark')?'dark':'light')};
 if(localStorage.getItem('tinh_tu_theme')==='dark')document.body.classList.add('dark');
 (async()=>{if(!token)return showAuth();try{await refresh();}catch{token='';localStorage.removeItem('tinh_tu_token');showAuth();}})();
+
+
+/* ===== HỌC VIỆN THIÊN TINH · LIGHTWEIGHT EFFECT ENGINE ===== */
+(function initAcademyEffects(){
+  if(window.__academyEffectsInitialized)return;
+  window.__academyEffectsInitialized=true;
+  const root=document.getElementById('academyEffects');
+  if(!root)return;
+  const petalField=root.querySelector('.petal-field');
+  const lotusField=root.querySelector('.lotus-field');
+  const spiritField=root.querySelector('.spirit-particles');
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  let resizeTimer=0;
+  let activeProfile='';
+
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  const rand=(min,max)=>Math.random()*(max-min)+min;
+  const isWeakDevice=()=>{
+    const cores=navigator.hardwareConcurrency||4;
+    const memory=navigator.deviceMemory||4;
+    return cores<=4||memory<=2;
+  };
+  const profile=()=>{
+    if(reduced.matches)return {petals:0,lotus:0,particles:0,key:'reduced'};
+    const weak=isWeakDevice();
+    const mobile=window.innerWidth<=600;
+    if(mobile)return weak?{petals:6,lotus:2,particles:12,key:'mobile-weak'}:{petals:10,lotus:4,particles:16,key:'mobile'};
+    return weak?{petals:10,lotus:4,particles:20,key:'desktop-weak'}:{petals:16,lotus:6,particles:30,key:'desktop'};
+  };
+  const clearField=(field)=>{while(field.firstChild)field.removeChild(field.firstChild)};
+  const makePetals=(count)=>{
+    clearField(petalField);
+    for(let i=0;i<count;i++){
+      const el=document.createElement('span');el.className='petal';
+      el.style.left=`${rand(-5,100)}%`;el.style.top=`${rand(-14,-2)}vh`;
+      el.style.setProperty('--duration',`${rand(8,16).toFixed(2)}s`);
+      el.style.setProperty('--delay',`${rand(-16,0).toFixed(2)}s`);
+      el.style.setProperty('--opacity',rand(.34,.82).toFixed(2));
+      el.style.setProperty('--sway1',`${rand(-8,12)}vw`);el.style.setProperty('--sway2',`${rand(-14,16)}vw`);
+      el.style.setProperty('--sway3',`${rand(-12,18)}vw`);el.style.setProperty('--sway4',`${rand(-20,20)}vw`);
+      const scale=rand(.65,1.25);el.style.transform=`scale(${scale})`;petalField.appendChild(el);
+    }
+  };
+  const makeLotus=(count)=>{
+    clearField(lotusField);
+    for(let i=0;i<count;i++){
+      const el=document.createElement('span');el.className='lotus-petal';
+      const side=Math.random()<.5?'left':'right';
+      el.style[side]=`${rand(0,14)}vw`;el.style.bottom=`${rand(5,38)}vh`;
+      el.style.setProperty('--duration',`${rand(12,20).toFixed(2)}s`);el.style.setProperty('--delay',`${rand(-20,0).toFixed(2)}s`);
+      el.style.setProperty('--opacity',rand(.22,.56).toFixed(2));el.style.setProperty('--drift',`${rand(-28,28)}px`);
+      const scale=rand(.7,1.15);el.style.transform=`scale(${scale})`;lotusField.appendChild(el);
+    }
+  };
+  const makeParticles=(count)=>{
+    clearField(spiritField);
+    const colors=['rgba(255,249,216,.82)','rgba(224,247,238,.72)','rgba(205,237,255,.68)'];
+    for(let i=0;i<count;i++){
+      const el=document.createElement('span');el.className='spirit-particle';
+      el.style.left=`${rand(2,98)}%`;el.style.top=`${rand(8,94)}%`;
+      el.style.setProperty('--size',`${rand(1,3.5).toFixed(2)}px`);el.style.setProperty('--glow',`${rand(3,8).toFixed(1)}px`);
+      el.style.setProperty('--particle-color',colors[i%colors.length]);el.style.setProperty('--opacity',rand(.25,.7).toFixed(2));
+      el.style.setProperty('--duration',`${rand(7,15).toFixed(2)}s`);el.style.setProperty('--delay',`${rand(-15,0).toFixed(2)}s`);
+      el.style.setProperty('--dx',`${rand(-22,22)}px`);el.style.setProperty('--dy',`${rand(-34,12)}px`);
+      spiritField.appendChild(el);
+    }
+  };
+  const apply=()=>{
+    const p=profile();
+    if(p.key===activeProfile)return;
+    activeProfile=p.key;
+    makePetals(p.petals);makeLotus(p.lotus);makeParticles(p.particles);
+  };
+  const onMotionChange=()=>{activeProfile='';apply()};
+  reduced.addEventListener?.('change',onMotionChange);
+  window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(apply,180)},{passive:true});
+  apply();
+})();
