@@ -45,6 +45,15 @@ async function migrate(){
  const chatSql=fs.readFileSync(path.join(__dirname,'db/migrations/004_chat.sql'),'utf8');
  await q(chatSql);
  await q("INSERT INTO schema_migrations(id) VALUES('004_chat') ON CONFLICT DO NOTHING");
+
+ // Training/quest reward concurrency fix:
+ // mailbox inserts used to acquire a KEY SHARE lock on characters through
+ // mailbox_messages.character_id -> characters.id while gameplay transactions
+ // already held FOR UPDATE on the same character. Removing that FK prevents
+ // the lock inversion that could surface as PostgreSQL 57014 during training.
+ const concurrencySql=fs.readFileSync(path.join(__dirname,'db/migrations/005_concurrency_fix.sql'),'utf8');
+ await q(concurrencySql);
+ await q("INSERT INTO schema_migrations(id) VALUES('005_concurrency_fix') ON CONFLICT DO NOTHING");
 }
 async function auth(req,res,next){
  try{const h=req.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
@@ -199,7 +208,52 @@ app.post('/api/characters/:id/inventory/:itemId/use',auth,asyncRoute(async(req,r
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
 app.post('/api/characters/:id/inventory/:itemId/equip',auth,asyncRoute(async(req,res)=>{const client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});const it=(await client.query(`SELECT i.*,v.quantity,v.equipped FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.item_id=$2 FOR UPDATE OF v`,[c.id,req.params.itemId])).rows[0];if(!it||it.quantity<1)throw Object.assign(Error('Không có vật phẩm.'),{status:404});if(!['weapon','armor','accessory'].includes(it.category))throw Object.assign(Error('Vật phẩm này không phải trang bị.'),{status:400});const effect=it.effect||{};if(it.equipped){for(const [k,v] of Object.entries(effect))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=GREATEST(0,${k}-$2) WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=FALSE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,it.id]);}else{const old=(await client.query(`SELECT i.effect,v.item_id FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.equipped=TRUE AND i.category=$2 FOR UPDATE OF v`,[c.id,it.category])).rows;for(const x of old){for(const [k,v] of Object.entries(x.effect||{}))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=GREATEST(0,${k}-$2) WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=FALSE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,x.item_id]);}for(const [k,v] of Object.entries(effect))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=${k}+$2 WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=TRUE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,it.id]);}await client.query('COMMIT');res.json({ok:true,equipped:!it.equipped});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
-app.post('/api/characters/:id/train',auth,asyncRoute(async(req,res)=>{const client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});if(Number(c.hp)<5)throw Object.assign(Error('HP không đủ để luyện tập. Hãy dùng vật phẩm hồi phục.'),{status:400});if(c.last_training_at&&Date.now()-new Date(c.last_training_at).getTime()<30000)throw Object.assign(Error('Luyện tập đang hồi chiêu. Hãy thử lại sau 30 giây.'),{status:429});await client.query('UPDATE characters SET hp=hp-5,last_training_at=NOW(),updated_at=NOW() WHERE id=$1',[c.id]);const gain=await awardExp(client,c.id,25);await advanceQuestProgress(client,c.id,req.user.id,'training',1);await log(req.user.id,c.id,'character.train',{exp:25,hpCost:5});await client.query('COMMIT');res.json({ok:true,exp:25,hpCost:5,level:gain.level,levelsGained:gain.levelsGained});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
+app.post('/api/characters/:id/train',auth,asyncRoute(async(req,res)=>{
+ const maxAttempts=3;
+ let lastError=null;
+ for(let attempt=1;attempt<=maxAttempts;attempt++){
+  const client=await pool.connect();
+  try{
+   await client.query("BEGIN");
+   // Keep the lock window short and retry transient lock/deadlock failures.
+   await client.query("SET LOCAL lock_timeout='2500ms'");
+   await client.query("SET LOCAL statement_timeout='8000ms'");
+
+   const c=(await client.query(
+    'SELECT id,hp,last_training_at FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',
+    [req.params.id,req.user.id]
+   )).rows[0];
+   if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
+   if(Number(c.hp)<5)throw Object.assign(Error('HP không đủ để luyện tập. Hãy dùng vật phẩm hồi phục.'),{status:400});
+   if(c.last_training_at&&Date.now()-new Date(c.last_training_at).getTime()<30000)
+    throw Object.assign(Error('Luyện tập đang hồi chiêu. Hãy thử lại sau 30 giây.'),{status:429});
+
+   await client.query(
+    'UPDATE characters SET hp=hp-5,last_training_at=NOW(),updated_at=NOW() WHERE id=$1',
+    [c.id]
+   );
+
+   const gain=await awardExp(client,c.id,25);
+   await advanceQuestProgress(client,c.id,req.user.id,'training',1);
+   await log(req.user.id,c.id,'character.train',{exp:25,hpCost:5});
+
+   await client.query('COMMIT');
+   client.release();
+   return res.json({ok:true,exp:25,hpCost:5,level:gain.level,levelsGained:gain.levelsGained});
+  }catch(e){
+   lastError=e;
+   try{await client.query('ROLLBACK');}catch(_){}
+   client.release();
+
+   // PostgreSQL: 55P03 lock_not_available, 57014 query_canceled,
+   // 40P01 deadlock_detected. A short retry makes mobile double-taps/
+   // concurrent gameplay requests resilient without duplicating rewards.
+   if(!['55P03','57014','40P01'].includes(e.code)||attempt===maxAttempts)throw e;
+   await new Promise(resolve=>setTimeout(resolve,120*attempt));
+  }
+ }
+ throw lastError||Error('Luyện tập thất bại.');
+}));
 app.post('/api/characters/:id/explore/:locationId',auth,asyncRoute(async(req,res)=>{
  const client=await pool.connect();try{await client.query('BEGIN');
  const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
