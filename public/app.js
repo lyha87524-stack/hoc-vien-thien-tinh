@@ -4,17 +4,33 @@ const avatarChoices=['🌟','🌙','⭐','🦊','🐱','🐰','🐼','🐸','�
 const avatarHtml=(value,cls='avatarSmall')=>/^https:\/\//i.test(String(value||''))?`<img class="${cls}" src="${esc(value)}" alt="Avatar" loading="lazy">`:`<span class="${cls}">${esc(value||'🌟')}</span>`;
 const api=async(url,opts={})=>{const r=await fetch('/api'+url,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(opts.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Có lỗi xảy ra.');return d};
 let msgTimer=0;
+let msgHideTimer=0;
 const msg=(s,duration=3000)=>{
   const el=$('#appMsg');
   if(!el)return;
   clearTimeout(msgTimer);
-  el.textContent=s||'';
-  if(s){
-    msgTimer=setTimeout(()=>{
-      el.textContent='';
-      msgTimer=0;
-    },duration);
+  clearTimeout(msgHideTimer);
+  el.classList.remove('is-visible','is-hiding');
+  el.textContent='';
+  if(!s){
+    el.setAttribute('aria-hidden','true');
+    return;
   }
+  el.textContent=String(s);
+  el.setAttribute('aria-hidden','false');
+  // Reflow is intentionally avoided; the bar animates only opacity/transform.
+  requestAnimationFrame(()=>el.classList.add('is-visible'));
+  msgTimer=setTimeout(()=>{
+    el.classList.remove('is-visible');
+    el.classList.add('is-hiding');
+    msgHideTimer=setTimeout(()=>{
+      el.textContent='';
+      el.classList.remove('is-hiding');
+      el.setAttribute('aria-hidden','true');
+      msgTimer=0;
+      msgHideTimer=0;
+    },220);
+  },Math.max(0,Number(duration)||3000));
 };
 function showAuth(){ $('#authView').classList.remove('hidden');$('#appView').classList.add('hidden');$('#mobileNav').classList.add('hidden');}
 function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden');$('#mobileNav').classList.remove('hidden');$('#welcomeName').textContent='Xin chào, '+user.displayName+'!';$$('.adminOnly').forEach(x=>x.classList.toggle('hidden',user.role!=='admin'));}
