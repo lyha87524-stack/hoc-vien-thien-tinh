@@ -36,6 +36,9 @@ async function migrate(){
  const socialSql=fs.readFileSync(path.join(__dirname,'db/migrations/002_social_profiles.sql'),'utf8');
  await q(socialSql);
  await q("INSERT INTO schema_migrations(id) VALUES('002_social_profiles') ON CONFLICT DO NOTHING");
+ const gameplaySql=fs.readFileSync(path.join(__dirname,'db/migrations/003_gameplay_mailbox.sql'),'utf8');
+ await q(gameplaySql);
+ await q("INSERT INTO schema_migrations(id) VALUES('003_gameplay_mailbox') ON CONFLICT DO NOTHING");
 }
 async function auth(req,res,next){
  try{const h=req.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
@@ -52,8 +55,9 @@ async function awardExp(client,charId,amount){
  let exp=Number(c.exp)+Number(amount),level=Number(c.level),points=0;
  const cap=100;
  while(level<cap&&exp>=level*100){exp-=level*100;level++;points+=3;}
- await client.query('UPDATE characters SET exp=$2,level=$3,stat_points=stat_points+$4,updated_at=NOW() WHERE id=$1',[charId,exp,level,points]);
- return {level,exp,levelsGained:level-Number(c.level),points};
+ const gained=level-Number(c.level);
+ await client.query('UPDATE characters SET exp=$2,level=$3,stat_points=stat_points+$4,hp=LEAST(100+(($3-1)*20),hp+($5*20)),mp=LEAST(50+(($3-1)*10),mp+($5*10)),updated_at=NOW() WHERE id=$1',[charId,exp,level,points,gained]);
+ return {level,exp,levelsGained:gained,points};
 }
 // Liveness: Render có thể xác nhận tiến trình Node còn hoạt động dù DB tạm gián đoạn.
 app.get('/health',(req,res)=>res.status(200).json({ok:true,service:'hoc-vien-thien-tinh'}));
@@ -91,7 +95,7 @@ app.post('/api/friends/request/:userId',auth,asyncRoute(async(req,res)=>{const t
 app.post('/api/friends/respond/:requestId',auth,asyncRoute(async(req,res)=>{const id=Number(req.params.requestId),action=req.body?.action;if(!['accept','reject'].includes(action))return res.status(400).json({error:'Thao tác không hợp lệ.'});const client=await pool.connect();try{await client.query('BEGIN');const fr=(await client.query("SELECT * FROM friend_requests WHERE id=$1 AND receiver_id=$2 AND status='pending' FOR UPDATE",[id,req.user.id])).rows[0];if(!fr)throw Object.assign(Error('Lời mời không tồn tại hoặc đã được xử lý.'),{status:404});if(action==='accept'){await client.query('INSERT INTO friendships(user_low,user_high) VALUES($1,$2) ON CONFLICT DO NOTHING',[fr.user_low,fr.user_high]);}await client.query('UPDATE friend_requests SET status=$2,responded_at=NOW() WHERE id=$1',[id,action==='accept'?'accepted':'rejected']);await client.query('COMMIT');res.json({ok:true,status:action==='accept'?'accepted':'rejected'});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
 app.delete('/api/friends/:userId',auth,asyncRoute(async(req,res)=>{const target=Number(req.params.userId),low=Math.min(target,Number(req.user.id)),high=Math.max(target,Number(req.user.id));const r=await q('DELETE FROM friendships WHERE user_low=$1 AND user_high=$2',[low,high]);if(!r.rowCount)return res.status(404).json({error:'Không tìm thấy quan hệ bạn bè.'});res.json({ok:true});}));
 app.post('/api/media/avatar',auth,asyncRoute(async(req,res)=>{const data=String(req.body?.data||'');const match=data.match(/^data:(image\/(?:png|jpeg|webp|gif|heic|heif));base64,([A-Za-z0-9+/=]+)$/);if(!match)return res.status(400).json({error:'Chỉ hỗ trợ ảnh PNG, JPG, WEBP hoặc GIF.'});const bytes=Buffer.from(match[2],'base64');if(bytes.length>1024*1024)return res.status(413).json({error:'Ảnh tối đa 1 MB.'});const cloud=process.env.CLOUDINARY_CLOUD_NAME,key=process.env.CLOUDINARY_API_KEY,secret=process.env.CLOUDINARY_API_SECRET;if(!cloud||!key||!secret)return res.status(503).json({error:'Chưa cấu hình Cloudinary. Hãy thêm CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET trên Render để bật tải ảnh bền vững.'});const timestamp=Math.floor(Date.now()/1000),folder='hoc-vien-thien-tinh/avatars',params=`folder=${folder}&timestamp=${timestamp}`;const signature=crypto.createHash('sha1').update(params+secret).digest('hex');const form=new FormData();form.append('file',new Blob([bytes],{type:match[1]}),'avatar');form.append('api_key',key);form.append('timestamp',String(timestamp));form.append('folder',folder);form.append('signature',signature);const upload=await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`,{method:'POST',body:form});const result=await upload.json();if(!upload.ok)throw Object.assign(Error('Không thể tải ảnh lên kho lưu trữ.'),{status:502});res.status(201).json({url:result.secure_url});}));
-app.get('/api/me',auth,asyncRoute(async(req,res)=>{const chars=await q('SELECT id,name,avatar,level,exp,star_coin,academy_point,crystal FROM characters WHERE user_id=$1 ORDER BY id',[req.user.id]);res.json({user:safeUser(req.user),characters:chars.rows});}));
+app.get('/api/me',auth,asyncRoute(async(req,res)=>{const chars=await q('SELECT id,name,avatar,level,exp,star_coin,academy_point,crystal,hp,mp,100+(level-1)*20 AS max_hp,50+(level-1)*10 AS max_mp,atk,def,spd,intelligence,luk,stat_points FROM characters WHERE user_id=$1 ORDER BY id',[req.user.id]);res.json({user:safeUser(req.user),characters:chars.rows});}));
 app.get('/api/overview',auth,asyncRoute(async(req,res)=>{
  const [deps,quests,items,locations]=await Promise.all([q('SELECT * FROM departments WHERE active ORDER BY id'),q('SELECT * FROM quests WHERE active AND (ends_at IS NULL OR ends_at>NOW()) ORDER BY id'),q('SELECT id,name,description,category,rarity,icon,price_coin,price_point,effect FROM items WHERE active ORDER BY id'),q('SELECT * FROM locations WHERE active ORDER BY required_level,id')]);
  res.json({departments:deps.rows,quests:quests.rows,items:items.rows,locations:locations.rows});
@@ -117,11 +121,11 @@ app.patch('/api/characters/:id',auth,asyncRoute(async(req,res)=>{
  if(!r.rowCount)return res.status(404).json({error:'Không tìm thấy OC hoặc bạn không có quyền sửa.'});res.json({character:r.rows[0]});
 }));
 app.post('/api/characters/:id/enroll',auth,asyncRoute(async(req,res)=>{
- const {departmentId,classId}=req.body||{};const c=await q('SELECT * FROM characters WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);
- if(!c.rowCount)return res.status(404).json({error:'Không tìm thấy OC.'});
- const d=await q('SELECT * FROM departments WHERE id=$1 AND active=TRUE',[departmentId]);if(!d.rowCount||c.rows[0].level<d.rows[0].admission_level)return res.status(400).json({error:'Chưa đủ điều kiện vào khoa.'});
- if(classId){const cl=await q('SELECT id FROM academy_classes WHERE id=$1 AND department_id=$2',[classId,departmentId]);if(!cl.rowCount)return res.status(400).json({error:'Lớp không thuộc khoa đã chọn.'});}
- const r=await q('UPDATE characters SET department_id=$2,class_id=$3,updated_at=NOW() WHERE id=$1 RETURNING *',[req.params.id,departmentId,classId||null]);res.json({character:r.rows[0]});
+ const {departmentId,classId}=req.body||{},client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];
+ if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});const d=await client.query('SELECT * FROM departments WHERE id=$1 AND active=TRUE',[departmentId]);if(!d.rowCount||c.level<d.rows[0].admission_level)throw Object.assign(Error('Chưa đủ điều kiện vào khoa.'),{status:400});
+ if(classId){const cl=await client.query('SELECT id FROM academy_classes WHERE id=$1 AND department_id=$2',[classId,departmentId]);if(!cl.rowCount)throw Object.assign(Error('Lớp không thuộc khoa đã chọn.'),{status:400});}
+ const r=await client.query('UPDATE characters SET department_id=$2,class_id=$3,updated_at=NOW() WHERE id=$1 RETURNING *',[req.params.id,departmentId,classId||null]);await advanceQuestProgress(client,c.id,req.user.id,'academy',1);await client.query('COMMIT');res.json({character:r.rows[0]});
+ }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
 app.get('/api/characters/:id/quests',auth,asyncRoute(async(req,res)=>{
  const own=await q('SELECT id FROM characters WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!own.rowCount)return res.status(404).json({error:'Không tìm thấy OC.'});
@@ -133,23 +137,30 @@ app.post('/api/characters/:id/quests/:questId/accept',auth,asyncRoute(async(req,
  if(quest.rows[0].department_id&&String(quest.rows[0].department_id)!==String(own.rows[0].department_id))return res.status(403).json({error:'Nhiệm vụ dành cho khoa khác.'});
  const r=await q("INSERT INTO character_quests(character_id,quest_id) VALUES($1,$2) ON CONFLICT(character_id,quest_id) DO NOTHING RETURNING *",[req.params.id,req.params.questId]);res.status(r.rowCount?201:409).json({quest:r.rows[0]||null,error:r.rowCount?undefined:'Bạn đã nhận nhiệm vụ này.'});
 }));
+async function advanceQuestProgress(client,charId,userId,questType,amount=1){
+ const rows=await client.query(`UPDATE character_quests cq SET progress=LEAST(q.target_count,cq.progress+$3),status=CASE WHEN cq.progress+$3>=q.target_count THEN 'completed' ELSE 'active' END FROM quests q WHERE cq.quest_id=q.id AND cq.character_id=$1 AND cq.status='active' AND q.quest_type=$2 RETURNING cq.id,cq.quest_id,cq.progress,q.title,q.reward_exp,q.reward_coin,q.reward_point,q.target_count`,[charId,questType,amount]);
+ for(const r of rows.rows){
+  if(r.progress>=r.target_count){
+   await client.query(`INSERT INTO mailbox_messages(user_id,character_id,title,body,message_type,source_type,source_id,payload) VALUES($1,$2,$3,$4,'quest_reward','quest_reward',$5,$6::jsonb) ON CONFLICT DO NOTHING`,[userId,charId,'Hoàn thành nhiệm vụ: '+r.title,'Bạn đã hoàn thành nhiệm vụ. Phần thưởng đang chờ bạn nhận trong hòm thư.',r.id,JSON.stringify({questId:r.quest_id,exp:Number(r.reward_exp),coin:Number(r.reward_coin),point:Number(r.reward_point)})]);
+  }
+ }
+ return rows.rows;
+}
 app.post('/api/characters/:id/quests/:questId/progress',auth,asyncRoute(async(req,res)=>{
- const amount=needInt(req.body?.amount,1,100)?Number(req.body.amount):1;
- const r=await q(`UPDATE character_quests cq SET progress=LEAST(q.target_count,cq.progress+$3),status=CASE WHEN cq.progress+$3>=q.target_count THEN 'completed' ELSE 'active' END FROM quests q WHERE cq.quest_id=q.id AND cq.character_id=$1 AND cq.quest_id=$2 AND cq.status='active' RETURNING cq.*`,[req.params.id,req.params.questId,amount]);
- if(!r.rowCount)return res.status(400).json({error:'Nhiệm vụ không ở trạng thái có thể cập nhật.'});res.json({quest:r.rows[0]});
-}));
-app.post('/api/characters/:id/quests/:questId/claim',auth,asyncRoute(async(req,res)=>{
- const client=await pool.connect();try{await client.query('BEGIN');
- const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
- const cq=(await client.query(`SELECT cq.*,q.* FROM character_quests cq JOIN quests q ON q.id=cq.quest_id WHERE cq.character_id=$1 AND cq.quest_id=$2 FOR UPDATE OF cq`,[req.params.id,req.params.questId])).rows[0];
- if(!cq||cq.status!=='completed'||cq.claimed_at)throw Object.assign(Error('Nhiệm vụ chưa hoàn thành hoặc đã nhận thưởng.'),{status:409});
- const gain=await awardExp(client,c.id,cq.reward_exp);
- await client.query('UPDATE characters SET star_coin=star_coin+$2,academy_point=academy_point+$3 WHERE id=$1',[c.id,cq.reward_coin,cq.reward_point]);
- await client.query("UPDATE character_quests SET status='claimed',claimed_at=NOW() WHERE id=$1",[cq.id]);
- await client.query('INSERT INTO transactions(character_id,transaction_type,currency,amount) VALUES($1,$2,$3,$4)',[c.id,'quest_reward','EXP',cq.reward_exp]);
- await log(req.user.id,c.id,'quest.claim',{questId:cq.quest_id});await client.query('COMMIT');res.json({ok:true,level:gain.level,levelsGained:gain.levelsGained,reward:{exp:cq.reward_exp,coin:cq.reward_coin,point:cq.reward_point}});
+ const amount=needInt(req.body?.amount,1,100)?Number(req.body.amount):1,client=await pool.connect();
+ try{await client.query('BEGIN');const own=await client.query('SELECT id FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id]);if(!own.rowCount)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
+ const r=await client.query(`UPDATE character_quests cq SET progress=LEAST(q.target_count,cq.progress+$3),status=CASE WHEN cq.progress+$3>=q.target_count THEN 'completed' ELSE 'active' END FROM quests q WHERE cq.quest_id=q.id AND cq.character_id=$1 AND cq.quest_id=$2 AND cq.status='active' RETURNING cq.*`,[req.params.id,req.params.questId,amount]);
+ if(!r.rowCount)throw Object.assign(Error('Nhiệm vụ không ở trạng thái có thể cập nhật.'),{status:400});
+ const quest=(await client.query('SELECT quest_type FROM quests WHERE id=$1',[req.params.questId])).rows[0];
+ if(r.rows[0].status==='completed'){const qdata=(await client.query('SELECT q.title,q.reward_exp,q.reward_coin,q.reward_point FROM quests q WHERE q.id=$1',[req.params.questId])).rows[0];await client.query(`INSERT INTO mailbox_messages(user_id,character_id,title,body,message_type,source_type,source_id,payload) VALUES($1,$2,$3,$4,'quest_reward','quest_reward',$5,$6::jsonb) ON CONFLICT DO NOTHING`,[req.user.id,req.params.id,'Hoàn thành nhiệm vụ: '+qdata.title,'Bạn đã hoàn thành nhiệm vụ. Phần thưởng đang chờ bạn nhận trong hòm thư.',r.rows[0].id,JSON.stringify({questId:Number(req.params.questId),exp:Number(qdata.reward_exp),coin:Number(qdata.reward_coin),point:Number(qdata.reward_point)})]);}
+ await client.query('COMMIT');res.json({quest:r.rows[0],mailCreated:r.rows[0].status==='completed'});
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
+app.post('/api/characters/:id/quests/:questId/claim',auth,asyncRoute(async(req,res)=>res.status(410).json({error:'Phần thưởng nhiệm vụ hiện được gửi vào Hòm thư. Hãy mở Hòm thư để nhận.'})));
+app.get('/api/mailbox',auth,asyncRoute(async(req,res)=>{const limit=Math.min(50,Math.max(1,Number(req.query.limit)||30)),offset=Math.max(0,Number(req.query.offset)||0);const r=await q(`SELECT id,character_id,title,body,message_type,payload,read_at,claimed_at,created_at FROM mailbox_messages WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,[req.user.id,limit,offset]);const count=await q('SELECT COUNT(*)::int AS unread FROM mailbox_messages WHERE user_id=$1 AND read_at IS NULL',[req.user.id]);res.json({messages:r.rows,unread:count.rows[0].unread,limit,offset});}));
+app.post('/api/mailbox/:mailId/read',auth,asyncRoute(async(req,res)=>{const r=await q('UPDATE mailbox_messages SET read_at=COALESCE(read_at,NOW()) WHERE id=$1 AND user_id=$2 RETURNING id',[req.params.mailId,req.user.id]);if(!r.rowCount)return res.status(404).json({error:'Không tìm thấy thư.'});res.json({ok:true});}));
+app.post('/api/mailbox/:mailId/claim',auth,asyncRoute(async(req,res)=>{const client=await pool.connect();try{await client.query('BEGIN');const m=(await client.query('SELECT * FROM mailbox_messages WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.mailId,req.user.id])).rows[0];if(!m)throw Object.assign(Error('Không tìm thấy thư.'),{status:404});if(m.message_type!=='quest_reward'||m.claimed_at)throw Object.assign(Error('Thư không có phần thưởng hoặc đã nhận.'),{status:409});const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[m.character_id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC nhận thưởng.'),{status:404});const p=m.payload||{},exp=Math.max(0,Number(p.exp)||0),coin=Math.max(0,Number(p.coin)||0),point=Math.max(0,Number(p.point)||0);const gain=await awardExp(client,c.id,exp);await client.query('UPDATE characters SET star_coin=star_coin+$2,academy_point=academy_point+$3 WHERE id=$1',[c.id,coin,point]);await client.query('UPDATE mailbox_messages SET claimed_at=NOW(),read_at=COALESCE(read_at,NOW()) WHERE id=$1',[m.id]);if(p.questId)await client.query("UPDATE character_quests SET status='claimed',claimed_at=NOW() WHERE character_id=$1 AND quest_id=$2 AND status='completed' AND claimed_at IS NULL",[c.id,p.questId]);await client.query('INSERT INTO transactions(character_id,transaction_type,currency,amount) VALUES($1,$2,$3,$4),($1,$5,$6,$7),($1,$8,$9,$10)',[c.id,'quest_reward','EXP',exp,'quest_reward','Star Coin',coin,'quest_reward','Academy Point',point]);await log(req.user.id,c.id,'mail.reward.claim',{mailId:m.id,exp,coin,point});await client.query('COMMIT');res.json({ok:true,reward:{exp,coin,point},level:gain.level,levelsGained:gain.levelsGained});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
+app.post('/api/characters/:id/stats/allocate',auth,asyncRoute(async(req,res)=>{const attr=String(req.body?.attribute||''),amount=needInt(req.body?.amount,1,99)?Number(req.body.amount):1;const map={atk:'atk',def:'def',spd:'spd',intelligence:'intelligence',luk:'luk'};if(!map[attr])return res.status(400).json({error:'Thuộc tính không hợp lệ.'});const r=await q(`UPDATE characters SET ${map[attr]}=${map[attr]}+$3,stat_points=stat_points-$3,updated_at=NOW() WHERE id=$1 AND user_id=$2 AND stat_points>=$3 RETURNING atk,def,spd,intelligence,luk,stat_points`,[req.params.id,req.user.id,amount]);if(!r.rowCount)return res.status(400).json({error:'Không đủ điểm thuộc tính hoặc không tìm thấy OC.'});res.json({stats:r.rows[0]});}));
 app.get('/api/characters/:id/inventory',auth,asyncRoute(async(req,res)=>{
  const own=await q('SELECT id FROM characters WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);if(!own.rowCount)return res.status(404).json({error:'Không tìm thấy OC.'});
  const r=await q('SELECT i.*,v.quantity,v.equipped FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.quantity>0 ORDER BY i.category,i.id',[req.params.id]);res.json({items:r.rows});
@@ -161,7 +172,7 @@ app.post('/api/characters/:id/shop/:itemId/buy',auth,asyncRoute(async(req,res)=>
  const cost=Number(item.price_coin)*qty;if(!Number.isSafeInteger(cost)||Number(c.star_coin)<cost)throw Object.assign(Error('Không đủ Star Coin.'),{status:400});
  await client.query('UPDATE characters SET star_coin=star_coin-$2 WHERE id=$1',[c.id,cost]);
  await client.query('INSERT INTO inventory(character_id,item_id,quantity) VALUES($1,$2,$3) ON CONFLICT(character_id,item_id) DO UPDATE SET quantity=inventory.quantity+EXCLUDED.quantity,updated_at=NOW()',[c.id,item.id,qty]);
- await client.query('INSERT INTO transactions(character_id,item_id,transaction_type,currency,amount,quantity) VALUES($1,$2,$3,$4,$5,$6)',[c.id,item.id,'purchase','Star Coin',cost,qty]);
+ await client.query('INSERT INTO transactions(character_id,item_id,transaction_type,currency,amount,quantity) VALUES($1,$2,$3,$4,$5,$6)',[c.id,item.id,'purchase','Star Coin',cost,qty]);await advanceQuestProgress(client,c.id,req.user.id,'purchase',qty);
  await log(req.user.id,c.id,'shop.purchase',{itemId:item.id,quantity:qty,cost});await client.query('COMMIT');res.json({ok:true,remaining:Number(c.star_coin)-cost,item:item.name,quantity:qty});
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
@@ -170,13 +181,15 @@ app.post('/api/characters/:id/inventory/:itemId/use',auth,asyncRoute(async(req,r
  const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
  const item=(await client.query(`SELECT i.*,v.quantity FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.item_id=$2 FOR UPDATE OF v`,[c.id,req.params.itemId])).rows[0];if(!item||item.quantity<1)throw Object.assign(Error('Không có vật phẩm.'),{status:400});
  if(item.category!=='consumable')throw Object.assign(Error('Vật phẩm này không thể sử dụng trực tiếp.'),{status:400});
- const effect=item.effect||{};const hp=Math.min(1000,c.hp+Number(effect.hp||0)),mp=Math.min(1000,c.mp+Number(effect.mp||0));
+ const effect=item.effect||{};if(Number(effect.exp||0)>0)await awardExp(client,c.id,Number(effect.exp));const current=(await client.query('SELECT hp,mp,level FROM characters WHERE id=$1',[c.id])).rows[0],maxHp=100+(Number(current.level)-1)*20,maxMp=50+(Number(current.level)-1)*10,hp=Math.min(maxHp,Number(current.hp)+Number(effect.hp||0)),mp=Math.min(maxMp,Number(current.mp)+Number(effect.mp||0));
  await client.query('UPDATE characters SET hp=$2,mp=$3 WHERE id=$1',[c.id,hp,mp]);
  await client.query('UPDATE inventory SET quantity=quantity-1,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,item.id]);
- await client.query('INSERT INTO transactions(character_id,item_id,transaction_type,currency,amount) VALUES($1,$2,$3,$4,$5)',[c.id,item.id,'use','item',1]);
+ await client.query('INSERT INTO transactions(character_id,item_id,transaction_type,currency,amount) VALUES($1,$2,$3,$4,$5)',[c.id,item.id,'use','item',1]);await advanceQuestProgress(client,c.id,req.user.id,'use_item',1);
  await log(req.user.id,c.id,'item.use',{itemId:item.id});await client.query('COMMIT');res.json({ok:true,hp,mp});
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
+app.post('/api/characters/:id/inventory/:itemId/equip',auth,asyncRoute(async(req,res)=>{const client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});const it=(await client.query(`SELECT i.*,v.quantity,v.equipped FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.item_id=$2 FOR UPDATE OF v`,[c.id,req.params.itemId])).rows[0];if(!it||it.quantity<1)throw Object.assign(Error('Không có vật phẩm.'),{status:404});if(!['weapon','armor','accessory'].includes(it.category))throw Object.assign(Error('Vật phẩm này không phải trang bị.'),{status:400});const effect=it.effect||{};if(it.equipped){for(const [k,v] of Object.entries(effect))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=GREATEST(0,${k}-$2) WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=FALSE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,it.id]);}else{const old=(await client.query(`SELECT i.effect,v.item_id FROM inventory v JOIN items i ON i.id=v.item_id WHERE v.character_id=$1 AND v.equipped=TRUE AND i.category=$2 FOR UPDATE OF v`,[c.id,it.category])).rows;for(const x of old){for(const [k,v] of Object.entries(x.effect||{}))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=GREATEST(0,${k}-$2) WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=FALSE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,x.item_id]);}for(const [k,v] of Object.entries(effect))if(['atk','def','spd','intelligence','luk'].includes(k))await client.query(`UPDATE characters SET ${k}=${k}+$2 WHERE id=$1`,[c.id,Number(v)||0]);await client.query('UPDATE inventory SET equipped=TRUE,updated_at=NOW() WHERE character_id=$1 AND item_id=$2',[c.id,it.id]);}await client.query('COMMIT');res.json({ok:true,equipped:!it.equipped});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
+app.post('/api/characters/:id/train',auth,asyncRoute(async(req,res)=>{const client=await pool.connect();try{await client.query('BEGIN');const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});if(Number(c.hp)<5)throw Object.assign(Error('HP không đủ để luyện tập. Hãy dùng vật phẩm hồi phục.'),{status:400});if(c.last_training_at&&Date.now()-new Date(c.last_training_at).getTime()<30000)throw Object.assign(Error('Luyện tập đang hồi chiêu. Hãy thử lại sau 30 giây.'),{status:429});await client.query('UPDATE characters SET hp=hp-5,last_training_at=NOW(),updated_at=NOW() WHERE id=$1',[c.id]);const gain=await awardExp(client,c.id,25);await advanceQuestProgress(client,c.id,req.user.id,'training',1);await log(req.user.id,c.id,'character.train',{exp:25,hpCost:5});await client.query('COMMIT');res.json({ok:true,exp:25,hpCost:5,level:gain.level,levelsGained:gain.levelsGained});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
 app.post('/api/characters/:id/explore/:locationId',auth,asyncRoute(async(req,res)=>{
  const client=await pool.connect();try{await client.query('BEGIN');
  const c=(await client.query('SELECT * FROM characters WHERE id=$1 AND user_id=$2 FOR UPDATE',[req.params.id,req.user.id])).rows[0];if(!c)throw Object.assign(Error('Không tìm thấy OC.'),{status:404});
@@ -184,7 +197,7 @@ app.post('/api/characters/:id/explore/:locationId',auth,asyncRoute(async(req,res
  if(c.level<loc.required_level)throw Object.assign(Error('Chưa đủ cấp độ để khám phá.'),{status:400});
  const ins=await client.query('INSERT INTO character_locations(character_id,location_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING *',[c.id,loc.id]);
  if(!ins.rowCount)throw Object.assign(Error('Bạn đã khám phá khu vực này.'),{status:409});
- const reward=await awardExp(client,c.id,loc.reward_exp);await log(req.user.id,c.id,'location.explore',{locationId:loc.id});
+ const reward=await awardExp(client,c.id,loc.reward_exp);await advanceQuestProgress(client,c.id,req.user.id,'explore',1);await log(req.user.id,c.id,'location.explore',{locationId:loc.id});
  await client.query('COMMIT');res.json({ok:true,rewardExp:loc.reward_exp,level:reward.level});
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 }));
