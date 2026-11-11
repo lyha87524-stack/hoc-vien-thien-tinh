@@ -23,16 +23,19 @@ const isDatabaseError=e=>Boolean(e)&&(
  ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','08000','08001','08003','08006','DB_CONFIG_MISSING','57P01','53300'].includes(e.code)||
  /timeout exceeded when trying to connect|connection terminated unexpectedly|database system is starting up|the database system is in recovery/i.test(String(e.message||''))
 );
-app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));app.use(compression());app.use(express.json({limit:'1mb'}));
+app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));app.use(compression());app.use(express.json({limit:'2mb'}));
 const q=(s,p=[])=>pool.query(s,p);
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 const passwordHash=(password,salt)=>crypto.scryptSync(password,salt,64).toString('hex');
-const safeUser=u=>({id:u.id,username:u.username,displayName:u.display_name,role:u.role,avatar:u.avatar,createdAt:u.created_at});
+const safeUser=u=>({id:u.id,username:u.username,displayName:u.display_name,role:u.role,avatar:u.avatar,bio:u.bio||'',createdAt:u.created_at,lastSeenAt:u.last_seen_at||null});
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 async function migrate(){
  const sql=fs.readFileSync(path.join(__dirname,'db/migrations/001_init.sql'),'utf8');
- await q(sql); // Idempotent DDL/seed statements; never touches the legacy database.
+ await q(sql); // Idempotent base schema; preserves existing records.
  await q("INSERT INTO schema_migrations(id) VALUES('001_init') ON CONFLICT DO NOTHING");
+ const socialSql=fs.readFileSync(path.join(__dirname,'db/migrations/002_social_profiles.sql'),'utf8');
+ await q(socialSql);
+ await q("INSERT INTO schema_migrations(id) VALUES('002_social_profiles') ON CONFLICT DO NOTHING");
 }
 async function auth(req,res,next){
  try{const h=req.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
@@ -65,7 +68,7 @@ app.post('/api/register',asyncRoute(async(req,res)=>{
  if(typeof password!=='string'||password.length<10||password.length>128)return res.status(400).json({error:'Mật khẩu phải từ 10 đến 128 ký tự.'});
  if(typeof displayName!=='string'||displayName.trim().length<2||displayName.trim().length>60)return res.status(400).json({error:'Tên hiển thị phải từ 2 đến 60 ký tự.'});
  const salt=crypto.randomBytes(16).toString('hex'),ph=passwordHash(password,salt);
- const r=await q('INSERT INTO users(username,password_hash,display_name) VALUES($1,$2,$3) RETURNING *',[username,`${salt}:${ph}`,displayName.trim()]);
+ const r=await q('INSERT INTO users(username,password_hash,display_name,last_seen_at) VALUES($1,$2,$3,NOW()) RETURNING *',[username,`${salt}:${ph}`,displayName.trim()]);
  const token=crypto.randomBytes(32).toString('base64url');await q("INSERT INTO auth_sessions(user_id,token_hash,expires_at) VALUES($1,$2,NOW()+INTERVAL '30 days')",[r.rows[0].id,hash(token)]);
  res.status(201).json({user:safeUser(r.rows[0]),token});
 }));
@@ -75,10 +78,19 @@ app.post('/api/login',asyncRoute(async(req,res)=>{
  const u=r.rows[0],[salt,stored]=u.password_hash.split(':');
  const actual=passwordHash(String(password||''),salt);
  if(!crypto.timingSafeEqual(Buffer.from(actual,'hex'),Buffer.from(stored,'hex')))return res.status(401).json({error:'Tên đăng nhập hoặc mật khẩu không đúng.'});
+ await q('UPDATE users SET last_seen_at=NOW() WHERE id=$1',[u.id]);
  const token=crypto.randomBytes(32).toString('base64url');await q("INSERT INTO auth_sessions(user_id,token_hash,expires_at) VALUES($1,$2,NOW()+INTERVAL '30 days')",[u.id,hash(token)]);
  res.json({user:safeUser(u),token});
 }));
-app.post('/api/logout',auth,asyncRoute(async(req,res)=>{await q('DELETE FROM auth_sessions WHERE token_hash=$1',[hash(req.get('authorization').slice(7))]);res.json({ok:true});}));
+app.post('/api/logout',auth,asyncRoute(async(req,res)=>{await q('DELETE FROM auth_sessions WHERE token_hash=$1',[hash(req.get('authorization').slice(7))]);await q("UPDATE users SET last_seen_at=NOW()-INTERVAL '10 minutes' WHERE id=$1",[req.user.id]);res.json({ok:true});}));
+app.post('/api/presence',auth,asyncRoute(async(req,res)=>{await q("UPDATE users SET last_seen_at=NOW() WHERE id=$1 AND (last_seen_at IS NULL OR last_seen_at<NOW()-INTERVAL '90 seconds')",[req.user.id]);res.json({ok:true});}));
+app.patch('/api/profile',auth,asyncRoute(async(req,res)=>{const displayName=String(req.body?.displayName??req.user.display_name).trim(),bio=String(req.body?.bio??req.user.bio??'').trim(),avatar=String(req.body?.avatar??req.user.avatar??'🌟').trim();if(displayName.length<2||displayName.length>60)return res.status(400).json({error:'Tên hiển thị phải từ 2 đến 60 ký tự.'});if(bio.length>280)return res.status(400).json({error:'Giới thiệu tối đa 280 ký tự.'});if(avatar.length>500||(!/^https:\/\//i.test(avatar)&&avatar.length>20))return res.status(400).json({error:'Avatar không hợp lệ.'});const r=await q('UPDATE users SET display_name=$2,bio=$3,avatar=$4 WHERE id=$1 RETURNING *',[req.user.id,displayName,bio,avatar]);req.user=r.rows[0];res.json({user:safeUser(r.rows[0])});}));
+app.get('/api/members',auth,asyncRoute(async(req,res)=>{const search=String(req.query.search||'').trim().slice(0,60),limit=Math.min(40,Math.max(1,Number(req.query.limit)||24)),offset=Math.max(0,Number(req.query.offset)||0);const like=search.replace(/[\\%_]/g,'\\$&')+'%';const r=await q(`SELECT u.id,u.username,u.display_name,u.avatar,u.bio,u.created_at,u.last_seen_at,(u.last_seen_at>NOW()-INTERVAL '3 minutes') AS online,EXISTS(SELECT 1 FROM friendships f WHERE (f.user_low=$1 AND f.user_high=u.id) OR (f.user_high=$1 AND f.user_low=u.id)) AS is_friend,EXISTS(SELECT 1 FROM friend_requests fr WHERE fr.status='pending' AND fr.requester_id=$1 AND fr.receiver_id=u.id) AS request_sent,EXISTS(SELECT 1 FROM friend_requests fr WHERE fr.status='pending' AND fr.requester_id=u.id AND fr.receiver_id=$1) AS request_received FROM users u WHERE u.is_active=TRUE AND u.id<>$1 AND ($2='' OR LOWER(u.username) LIKE LOWER($3) OR LOWER(u.display_name) LIKE LOWER($3)) ORDER BY online DESC,u.display_name ASC,u.id ASC LIMIT $4 OFFSET $5`,[req.user.id,search,like,limit,offset]);res.json({members:r.rows,limit,offset});}));
+app.get('/api/friends',auth,asyncRoute(async(req,res)=>{const r=await q(`SELECT u.id,u.username,u.display_name,u.avatar,u.bio,u.created_at,u.last_seen_at,(u.last_seen_at>NOW()-INTERVAL '3 minutes') AS online,f.created_at AS friends_since FROM friendships f JOIN users u ON u.id=CASE WHEN f.user_low=$1 THEN f.user_high ELSE f.user_low END WHERE f.user_low=$1 OR f.user_high=$1 ORDER BY online DESC,u.display_name`,[req.user.id]);const incoming=await q(`SELECT fr.id,u.id AS user_id,u.username,u.display_name,u.avatar,u.bio,fr.created_at FROM friend_requests fr JOIN users u ON u.id=fr.requester_id WHERE fr.receiver_id=$1 AND fr.status='pending' ORDER BY fr.created_at DESC LIMIT 50`,[req.user.id]);const outgoing=await q(`SELECT fr.id,u.id AS user_id,u.username,u.display_name,u.avatar,fr.created_at FROM friend_requests fr JOIN users u ON u.id=fr.receiver_id WHERE fr.requester_id=$1 AND fr.status='pending' ORDER BY fr.created_at DESC LIMIT 50`,[req.user.id]);res.json({friends:r.rows,incoming:incoming.rows,outgoing:outgoing.rows});}));
+app.post('/api/friends/request/:userId',auth,asyncRoute(async(req,res)=>{const target=Number(req.params.userId);if(!Number.isSafeInteger(target)||target===Number(req.user.id))return res.status(400).json({error:'Tài khoản không hợp lệ.'});const u=await q('SELECT id FROM users WHERE id=$1 AND is_active=TRUE',[target]);if(!u.rowCount)return res.status(404).json({error:'Không tìm thấy thành viên.'});const low=Math.min(target,Number(req.user.id)),high=Math.max(target,Number(req.user.id));const exists=await q('SELECT 1 FROM friendships WHERE user_low=$1 AND user_high=$2',[low,high]);if(exists.rowCount)return res.status(409).json({error:'Hai người đã là bạn bè.'});const reverse=await q("SELECT id FROM friend_requests WHERE requester_id=$1 AND receiver_id=$2 AND status='pending'",[target,req.user.id]);if(reverse.rowCount)return res.status(409).json({error:'Người này đã gửi lời mời cho bạn. Hãy chấp nhận trong mục Bạn bè.'});try{const r=await q("INSERT INTO friend_requests(user_low,user_high,requester_id,receiver_id) VALUES($1,$2,$3,$4) RETURNING id",[low,high,req.user.id,target]);res.status(201).json({ok:true,id:r.rows[0].id});}catch(e){if(e.code==='23505')return res.status(409).json({error:'Lời mời kết bạn đang chờ xử lý.'});throw e;}}));
+app.post('/api/friends/respond/:requestId',auth,asyncRoute(async(req,res)=>{const id=Number(req.params.requestId),action=req.body?.action;if(!['accept','reject'].includes(action))return res.status(400).json({error:'Thao tác không hợp lệ.'});const client=await pool.connect();try{await client.query('BEGIN');const fr=(await client.query("SELECT * FROM friend_requests WHERE id=$1 AND receiver_id=$2 AND status='pending' FOR UPDATE",[id,req.user.id])).rows[0];if(!fr)throw Object.assign(Error('Lời mời không tồn tại hoặc đã được xử lý.'),{status:404});if(action==='accept'){await client.query('INSERT INTO friendships(user_low,user_high) VALUES($1,$2) ON CONFLICT DO NOTHING',[fr.user_low,fr.user_high]);}await client.query('UPDATE friend_requests SET status=$2,responded_at=NOW() WHERE id=$1',[id,action==='accept'?'accepted':'rejected']);await client.query('COMMIT');res.json({ok:true,status:action==='accept'?'accepted':'rejected'});}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}));
+app.delete('/api/friends/:userId',auth,asyncRoute(async(req,res)=>{const target=Number(req.params.userId),low=Math.min(target,Number(req.user.id)),high=Math.max(target,Number(req.user.id));const r=await q('DELETE FROM friendships WHERE user_low=$1 AND user_high=$2',[low,high]);if(!r.rowCount)return res.status(404).json({error:'Không tìm thấy quan hệ bạn bè.'});res.json({ok:true});}));
+app.post('/api/media/avatar',auth,asyncRoute(async(req,res)=>{const data=String(req.body?.data||'');const match=data.match(/^data:(image\/(?:png|jpeg|webp|gif|heic|heif));base64,([A-Za-z0-9+/=]+)$/);if(!match)return res.status(400).json({error:'Chỉ hỗ trợ ảnh PNG, JPG, WEBP hoặc GIF.'});const bytes=Buffer.from(match[2],'base64');if(bytes.length>1024*1024)return res.status(413).json({error:'Ảnh tối đa 1 MB.'});const cloud=process.env.CLOUDINARY_CLOUD_NAME,key=process.env.CLOUDINARY_API_KEY,secret=process.env.CLOUDINARY_API_SECRET;if(!cloud||!key||!secret)return res.status(503).json({error:'Chưa cấu hình Cloudinary. Hãy thêm CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET trên Render để bật tải ảnh bền vững.'});const timestamp=Math.floor(Date.now()/1000),folder='hoc-vien-thien-tinh/avatars',params=`folder=${folder}&timestamp=${timestamp}`;const signature=crypto.createHash('sha1').update(params+secret).digest('hex');const form=new FormData();form.append('file',new Blob([bytes],{type:match[1]}),'avatar');form.append('api_key',key);form.append('timestamp',String(timestamp));form.append('folder',folder);form.append('signature',signature);const upload=await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`,{method:'POST',body:form});const result=await upload.json();if(!upload.ok)throw Object.assign(Error('Không thể tải ảnh lên kho lưu trữ.'),{status:502});res.status(201).json({url:result.secure_url});}));
 app.get('/api/me',auth,asyncRoute(async(req,res)=>{const chars=await q('SELECT id,name,avatar,level,exp,star_coin,academy_point,crystal FROM characters WHERE user_id=$1 ORDER BY id',[req.user.id]);res.json({user:safeUser(req.user),characters:chars.rows});}));
 app.get('/api/overview',auth,asyncRoute(async(req,res)=>{
  const [deps,quests,items,locations]=await Promise.all([q('SELECT * FROM departments WHERE active ORDER BY id'),q('SELECT * FROM quests WHERE active AND (ends_at IS NULL OR ends_at>NOW()) ORDER BY id'),q('SELECT id,name,description,category,rarity,icon,price_coin,price_point,effect FROM items WHERE active ORDER BY id'),q('SELECT * FROM locations WHERE active ORDER BY required_level,id')]);
@@ -98,6 +110,7 @@ app.get('/api/characters/:id',auth,asyncRoute(async(req,res)=>{
 app.patch('/api/characters/:id',auth,asyncRoute(async(req,res)=>{
  const fields=['name','avatar','fullbody_url','gender','age','birthday','height_cm','weight_kg','race','personality','appearance','biography','hobbies','strengths','weaknesses'];
  const allowed={};for(const f of fields)if(req.body?.[f]!==undefined)allowed[f]=req.body[f];
+ if(allowed.avatar!==undefined){allowed.avatar=String(allowed.avatar);if(allowed.avatar.length>500||(!/^https:\/\//i.test(allowed.avatar)&&allowed.avatar.length>20))return res.status(400).json({error:'Ảnh OC không hợp lệ.'});}
  const sets=[],vals=[];for(const [k,v] of Object.entries(allowed)){vals.push(v);sets.push(`${k}=$${vals.length}`);}
  if(!sets.length)return res.status(400).json({error:'Không có dữ liệu cần cập nhật.'});
  vals.push(req.params.id,req.user.id);const r=await q(`UPDATE characters SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length-1} AND user_id=$${vals.length} RETURNING *`,vals);
@@ -217,6 +230,8 @@ async function initializeDatabase(){
    await migrate();
    databaseReady=true;
    console.log('[DB] PostgreSQL connected; migrations are ready.');
+   await maintenanceCleanup();
+   setInterval(()=>maintenanceCleanup().catch(e=>console.error('[DB] Maintenance failed:',e.message)),24*60*60*1000).unref();
    return;
   }catch(e){
    databaseReady=false;
@@ -225,6 +240,12 @@ async function initializeDatabase(){
    if(!shuttingDown)await new Promise(resolve=>setTimeout(resolve,delay));
   }
  }
+}
+async function maintenanceCleanup(){
+ // Bounded cleanup: expire sessions and prune only non-essential activity logs older than 90 days.
+ for(let i=0;i<5;i++){const r=await q("DELETE FROM auth_sessions WHERE id IN (SELECT id FROM auth_sessions WHERE expires_at<NOW() ORDER BY expires_at LIMIT 1000)");if(r.rowCount<1000)break;}
+ for(let i=0;i<5;i++){const r=await q("DELETE FROM activity_logs WHERE id IN (SELECT id FROM activity_logs WHERE created_at<NOW()-INTERVAL '90 days' ORDER BY created_at LIMIT 1000)");if(r.rowCount<1000)break;}
+ for(let i=0;i<5;i++){const r=await q("DELETE FROM friend_requests WHERE id IN (SELECT id FROM friend_requests WHERE status<>'pending' AND responded_at<NOW()-INTERVAL '180 days' ORDER BY responded_at LIMIT 500)");if(r.rowCount<500)break;}
 }
 async function shutdown(){
  if(shuttingDown)return;shuttingDown=true;
