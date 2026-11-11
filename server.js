@@ -3,7 +3,26 @@ const express=require('express'),compression=require('compression'),helmet=requi
 const crypto=require('crypto'),fs=require('fs'),path=require('path');
 const {Pool}=require('pg');
 const app=express(),PORT=Number(process.env.PORT)||10000;
-const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.NODE_ENV==='production'?{rejectUnauthorized:false}:false,max:Number(process.env.DB_POOL_MAX||5),connectionTimeoutMillis:5000,idleTimeoutMillis:15000});
+const databaseUrl=(process.env.DATABASE_URL||'').trim();
+const pool=new Pool({
+ connectionString:databaseUrl||undefined,
+ ssl:process.env.NODE_ENV==='production'?{rejectUnauthorized:false}:false,
+ max:Math.max(1,Math.min(10,Number(process.env.DB_POOL_MAX)||5)),
+ min:0,
+ connectionTimeoutMillis:10000,
+ idleTimeoutMillis:30000,
+ keepAlive:true,
+ keepAliveInitialDelayMillis:10000,
+ statement_timeout:15000,
+ query_timeout:20000,
+ application_name:'hoc-vien-thien-tinh'
+});
+let databaseReady=false;
+pool.on('error',err=>console.error('[DB] Unexpected idle-client error:',err.code||err.message));
+const isDatabaseError=e=>Boolean(e)&&(
+ ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','08000','08001','08003','08006','DB_CONFIG_MISSING','57P01','53300'].includes(e.code)||
+ /timeout exceeded when trying to connect|connection terminated unexpectedly|database system is starting up|the database system is in recovery/i.test(String(e.message||''))
+);
 app.disable('x-powered-by');app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));app.use(compression());app.use(express.json({limit:'1mb'}));
 const q=(s,p=[])=>pool.query(s,p);
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
@@ -33,7 +52,13 @@ async function awardExp(client,charId,amount){
  await client.query('UPDATE characters SET exp=$2,level=$3,stat_points=stat_points+$4,updated_at=NOW() WHERE id=$1',[charId,exp,level,points]);
  return {level,exp,levelsGained:level-Number(c.level),points};
 }
-app.get('/health',asyncRoute(async(req,res)=>{await q('SELECT 1');res.json({ok:true,service:'hoc-vien-thien-tinh'});}));
+// Liveness: Render có thể xác nhận tiến trình Node còn hoạt động dù DB tạm gián đoạn.
+app.get('/health',(req,res)=>res.status(200).json({ok:true,service:'hoc-vien-thien-tinh'}));
+// Readiness: chỉ báo sẵn sàng phục vụ nghiệp vụ khi DB và migration đã hoạt động.
+app.get('/ready',asyncRoute(async(req,res)=>{
+ if(!databaseReady)return res.status(503).json({ok:false,database:'not_ready'});
+ await q('SELECT 1');res.json({ok:true,database:'connected'});
+}));
 app.post('/api/register',asyncRoute(async(req,res)=>{
  const {username,password,displayName}=req.body||{};
  if(!/^[a-zA-Z0-9_]{3,24}$/.test(String(username||'')))return res.status(400).json({error:'Tên đăng nhập 3–24 ký tự, chỉ gồm chữ, số và _.'});
@@ -166,9 +191,44 @@ app.post('/api/admin/quests',auth,admin,asyncRoute(async(req,res)=>{
 }));
 app.get('/api/admin/users',auth,admin,asyncRoute(async(req,res)=>{const r=await q('SELECT id,username,display_name,role,is_active,created_at FROM users ORDER BY id DESC LIMIT 100');res.json({users:r.rows});}));
 app.use(express.static(path.join(__dirname,'public'),{extensions:['html']}));
-app.use((err,req,res,next)=>{console.error('[API]',err);res.status(err.status||500).json({error:err.status?err.message:'Máy chủ gặp lỗi. Vui lòng thử lại.'});});
-let server;
-(async()=>{try{await migrate();server=app.listen(PORT,'0.0.0.0',()=>console.log(`Học Viện Thiên Tinh listening on ${PORT}`));}
-catch(e){console.error('Database migration failed:',e);process.exit(1);}})();
-async function shutdown(){if(server)server.close();await pool.end();process.exit(0);}
+app.use((err,req,res,next)=>{
+ if(res.headersSent)return next(err);
+ if(isDatabaseError(err)){
+  console.error('[DB] Database unavailable:',err.code||err.message);
+  return res.status(503).json({error:'Cơ sở dữ liệu đang tạm thời không kết nối được. Dữ liệu của bạn vẫn được giữ nguyên, vui lòng thử lại sau ít phút.',code:'DATABASE_UNAVAILABLE'});
+ }
+ console.error('[API]',err);
+ res.status(err.status||500).json({error:err.status?err.message:'Máy chủ gặp lỗi. Vui lòng thử lại.'});
+});
+let server,shuttingDown=false;
+// Mở cổng HTTP trước; không để sự cố DB làm Render hiểu nhầm ứng dụng bị crash.
+server=app.listen(PORT,'0.0.0.0',()=>{
+ console.log(`Học Viện Thiên Tinh listening on ${PORT}`);
+ if(!databaseUrl)console.error('[DB] DATABASE_URL is missing. Set it in Render Environment.');
+ initializeDatabase();
+});
+async function initializeDatabase(){
+ let attempt=0;
+ while(!shuttingDown&&!databaseReady){
+  attempt++;
+  try{
+   if(!databaseUrl)throw Object.assign(new Error('DATABASE_URL is not configured'),{code:'DB_CONFIG_MISSING'});
+   await pool.query('SELECT 1');
+   await migrate();
+   databaseReady=true;
+   console.log('[DB] PostgreSQL connected; migrations are ready.');
+   return;
+  }catch(e){
+   databaseReady=false;
+   console.error(`[DB] Initialization attempt ${attempt} failed:`,e.code||e.message);
+   const delay=Math.min(60000,2000*Math.pow(2,Math.min(attempt-1,5)));
+   if(!shuttingDown)await new Promise(resolve=>setTimeout(resolve,delay));
+  }
+ }
+}
+async function shutdown(){
+ if(shuttingDown)return;shuttingDown=true;
+ if(server)await new Promise(resolve=>server.close(resolve));
+ await pool.end();process.exit(0);
+}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
