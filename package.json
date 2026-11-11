@@ -1,0 +1,10 @@
+{
+  "name":"hoc-vien-thien-tinh",
+  "version":"1.0.0",
+  "private":true,
+  "description":"Hoc Vien Thien Tinh - Pixel Fantasy Academy RPG",
+  "main":"server.js",
+  "scripts":{"start":"node server.js","dev":"node --watch server.js","check":"node --check server.js && node --check public/app.js"},
+  "engines":{"node":">=20"},
+  "dependencies":{"compression":"^1.8.1","express":"^5.1.0","helmet":"^8.1.0","pg":"^8.16.3"}
+}
