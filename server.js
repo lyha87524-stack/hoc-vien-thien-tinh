@@ -30,31 +30,23 @@ const passwordHash=(password,salt)=>crypto.scryptSync(password,salt,64).toString
 const safeUser=u=>({id:u.id,username:u.username,displayName:u.display_name,role:u.role,avatar:u.avatar,bio:u.bio||'',createdAt:u.created_at,lastSeenAt:u.last_seen_at||null});
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 async function migrate(){
- const sql=fs.readFileSync(path.join(__dirname,'db/migrations/001_init.sql'),'utf8');
- await q(sql); // Idempotent base schema; preserves existing records.
+ const baseSql=fs.readFileSync(path.join(__dirname,'db/migrations','001_init.sql'),'utf8');
+ await q(baseSql);
  await q("INSERT INTO schema_migrations(id) VALUES('001_init') ON CONFLICT DO NOTHING");
- const socialSql=fs.readFileSync(path.join(__dirname,'db/migrations/002_social_profiles.sql'),'utf8');
- await q(socialSql);
- await q("INSERT INTO schema_migrations(id) VALUES('002_social_profiles') ON CONFLICT DO NOTHING");
- const gameplaySql=fs.readFileSync(path.join(__dirname,'db/migrations/003_gameplay_mailbox.sql'),'utf8');
- await q(gameplaySql);
- await q("INSERT INTO schema_migrations(id) VALUES('003_gameplay_mailbox') ON CONFLICT DO NOTHING");
-
- // Chat schema: required by /api/chat/global and /api/chat/direct/:userId.
- // Kept idempotent so existing Render/PostgreSQL databases are upgraded safely.
- const chatSql=fs.readFileSync(path.join(__dirname,'db/migrations/004_chat.sql'),'utf8');
- await q(chatSql);
- await q("INSERT INTO schema_migrations(id) VALUES('004_chat') ON CONFLICT DO NOTHING");
-
- // Training/quest reward concurrency fix:
- // mailbox inserts used to acquire a KEY SHARE lock on characters through
- // mailbox_messages.character_id -> characters.id while gameplay transactions
- // already held FOR UPDATE on the same character. Removing that FK prevents
- // the lock inversion that could surface as PostgreSQL 57014 during training.
- const concurrencySql=fs.readFileSync(path.join(__dirname,'db/migrations/005_concurrency_fix.sql'),'utf8');
- await q(concurrencySql);
- await q("INSERT INTO schema_migrations(id) VALUES('005_concurrency_fix') ON CONFLICT DO NOTHING");
+ const runMigration=async(id,file)=>{
+  const already=await q('SELECT 1 FROM schema_migrations WHERE id=$1',[id]);
+  if(already.rowCount)return;
+  const sql=fs.readFileSync(path.join(__dirname,'db/migrations',file),'utf8');
+  await q(sql);
+  await q('INSERT INTO schema_migrations(id) VALUES($1) ON CONFLICT DO NOTHING',[id]);
+ };
+ await runMigration('002_social_profiles','002_social_profiles.sql');
+ await runMigration('003_gameplay_mailbox','003_gameplay_mailbox.sql');
+ await runMigration('004_chat','004_chat.sql');
+ await runMigration('005_concurrency_fix','005_concurrency_fix.sql');
+ await runMigration('006_training_lock_fix','006_training_lock_fix.sql');
 }
+
 async function auth(req,res,next){
  try{const h=req.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
  if(!token)return res.status(401).json({error:'Vui lòng đăng nhập.'});
@@ -235,10 +227,15 @@ app.post('/api/characters/:id/train',auth,asyncRoute(async(req,res)=>{
 
    const gain=await awardExp(client,c.id,25);
    await advanceQuestProgress(client,c.id,req.user.id,'training',1);
-   await log(req.user.id,c.id,'character.train',{exp:25,hpCost:5});
 
+   // Do not write activity_logs while the character row is FOR UPDATE.
+   // The log is non-critical audit data and can safely be written after the
+   // gameplay transaction commits, eliminating the remaining FK lock inversion.
    await client.query('COMMIT');
    client.release();
+   await log(req.user.id,c.id,'character.train',{exp:25,hpCost:5}).catch(err=>
+    console.error('[DB] Training activity log skipped:',err.code||err.message)
+   );
    return res.json({ok:true,exp:25,hpCost:5,level:gain.level,levelsGained:gain.levelsGained});
   }catch(e){
    lastError=e;
