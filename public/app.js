@@ -3,7 +3,19 @@ let token=localStorage.getItem('tinh_tu_token')||'',user=null,overview=null,char
 const avatarChoices=['🌟','🌙','⭐','🦊','🐱','🐰','🐼','🐸','🦋','🌸','🧚','🧙','🧝','🐉','🦄','🐺','🪷','🎀'];
 const avatarHtml=(value,cls='avatarSmall')=>/^https:\/\//i.test(String(value||''))?`<img class="${cls}" src="${esc(value)}" alt="Avatar" loading="lazy">`:`<span class="${cls}">${esc(value||'🌟')}</span>`;
 const api=async(url,opts={})=>{const r=await fetch('/api'+url,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(opts.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'Có lỗi xảy ra.');return d};
-const msg=(s)=>$('#appMsg').textContent=s||'';
+let msgTimer=0;
+const msg=(s,duration=3000)=>{
+  const el=$('#appMsg');
+  if(!el)return;
+  clearTimeout(msgTimer);
+  el.textContent=s||'';
+  if(s){
+    msgTimer=setTimeout(()=>{
+      el.textContent='';
+      msgTimer=0;
+    },duration);
+  }
+};
 function showAuth(){ $('#authView').classList.remove('hidden');$('#appView').classList.add('hidden');$('#mobileNav').classList.add('hidden');}
 function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden');$('#mobileNav').classList.remove('hidden');$('#welcomeName').textContent='Xin chào, '+user.displayName+'!';$$('.adminOnly').forEach(x=>x.classList.toggle('hidden',user.role!=='admin'));}
 function money(n){return Number(n||0).toLocaleString('vi-VN')}
