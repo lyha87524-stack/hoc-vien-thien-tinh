@@ -319,3 +319,71 @@ body.dark {
   .welcome .soft { padding:10px 11px; font-size:12px; }
   .mobileNav button { font-size:8px; }
 }
+
+/* ===== MOBILE FIX: keep the Starfall character artwork clear and navigation readable ===== */
+@media (max-width: 720px) {
+  /* Reserve enough vertical space for the title and the complete character row
+     already present in the background image before the dashboard begins. */
+  .welcome.card {
+    margin-top: clamp(270px, 32vh, 420px) !important;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The mobile menu contains 12 destinations. Keep each item readable and
+     let the user swipe horizontally instead of squeezing labels together. */
+  .mobileNav {
+    display: flex;
+    justify-content: flex-start !important;
+    align-items: center;
+    gap: 6px !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    padding: 7px 9px !important;
+    height: 72px !important;
+    box-sizing: border-box;
+  }
+  .mobileNav::-webkit-scrollbar { display: none; }
+  .mobileNav button {
+    flex: 0 0 66px !important;
+    width: 66px;
+    min-width: 66px !important;
+    max-width: 66px;
+    height: 54px !important;
+    padding: 4px 2px !important;
+    gap: 3px !important;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    overflow: hidden;
+  }
+  .mobileNav button svg {
+    flex: 0 0 23px;
+    width: 23px !important;
+    height: 23px !important;
+  }
+  .mobileNav button span {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 9px;
+    line-height: 1.1;
+  }
+
+  /* Prevent the fixed menu from covering the last row of dashboard content. */
+  .shell {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+  }
+  .content.card {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .mobileNav button { flex-basis: 62px !important; width: 62px; min-width: 62px !important; max-width: 62px; }
+  .mobileNav button span { font-size: 8px; }
+}
