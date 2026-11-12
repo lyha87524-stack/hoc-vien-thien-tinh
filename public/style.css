@@ -489,3 +489,132 @@ body.dark .rankAvatar{background:#2b3a32;border-color:#c5aa70}
   }
   footer { position: relative; z-index: 2; }
 }
+
+/* === STARFALL SYMPHONY · COSMIC UI POLISH v1.7 === */
+:root{
+  --cosmic-night:#10143d;
+  --cosmic-violet:#6840bd;
+  --cosmic-lilac:#c7a8ff;
+  --cosmic-ice:#9be7ff;
+  --cosmic-gold:#f5d58a;
+  --cosmic-glass:rgba(248,247,255,.84);
+  --cosmic-glass-line:rgba(222,207,255,.78);
+  --cosmic-glow:0 12px 34px rgba(35,22,104,.22),0 0 22px rgba(143,119,255,.12);
+}
+
+/* Use the existing academy artwork on wide screens; keep the mobile Starfall art
+   in its own fixed layer so it never stretches with the page content. */
+body{background-color:var(--cosmic-night);}
+body:after{
+  background:
+    radial-gradient(ellipse 55% 42% at 50% 36%,rgba(137,113,255,.09),transparent 72%),
+    linear-gradient(180deg,rgba(20,14,64,.04),rgba(17,16,64,.12) 72%,rgba(12,12,48,.2));
+}
+#academyEffects .star-field{position:absolute;inset:0;z-index:2;overflow:hidden;pointer-events:none;contain:paint;}
+#academyEffects .star-field:before{
+  content:"";position:absolute;inset:-18%;
+  background:
+    radial-gradient(ellipse at 18% 25%,rgba(146,115,255,.16),transparent 34%),
+    radial-gradient(ellipse at 78% 58%,rgba(78,179,255,.12),transparent 38%),
+    radial-gradient(ellipse at 52% 88%,rgba(198,137,255,.09),transparent 36%);
+  animation:cosmicNebulaDrift 48s ease-in-out infinite alternate;
+}
+.cosmic-star{position:absolute;display:block;width:var(--star-size);height:var(--star-size);border-radius:50%;
+  background:#fff;opacity:var(--star-opacity);box-shadow:0 0 var(--star-glow) rgba(206,224,255,.92);
+  animation:cosmicStarTwinkle var(--star-duration) ease-in-out var(--star-delay) infinite;}
+.cosmic-star.is-sparkle:before,.cosmic-star.is-sparkle:after{content:"";position:absolute;left:50%;top:50%;width:1px;height:12px;
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.95),transparent);transform:translate(-50%,-50%);}
+.cosmic-star.is-sparkle:after{width:12px;height:1px;}
+#academyEffects .star-field:after{content:"";position:absolute;top:8%;right:7%;width:112px;height:1px;opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.95));
+  box-shadow:0 0 8px rgba(177,222,255,.7);transform:rotate(-32deg);transform-origin:right center;
+  animation:starfallMeteor 26s ease-in-out 5s infinite;}
+@keyframes cosmicStarTwinkle{0%,100%{opacity:.22;transform:scale(.82)}50%{opacity:var(--star-opacity);transform:scale(1.16)}}
+@keyframes cosmicNebulaDrift{from{transform:translate3d(-1.2%,.4%,0) scale(1)}to{transform:translate3d(1.4%,-.8%,0) scale(1.04)}}
+@keyframes starfallMeteor{0%,8%,100%{opacity:0;transform:translate3d(0,0,0) rotate(-32deg)}10%{opacity:.9}17%{opacity:0;transform:translate3d(-230px,150px,0) rotate(-32deg)}}
+
+/* Translucent panels keep text readable while letting the artwork breathe. */
+.card,.tile,.memberCard,.profileEditor,.chatMessages,.chatFriend,.chatTab{
+  border-color:var(--cosmic-glass-line);
+}
+.content.card{
+  background:rgba(248,247,255,.92);
+  border:1px solid var(--cosmic-glass-line);
+  box-shadow:var(--cosmic-glow);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .content.card,.academyMenu,.mobileNav{
+    -webkit-backdrop-filter:blur(14px) saturate(1.12);
+    backdrop-filter:blur(14px) saturate(1.12);
+  }
+  .content.card{background:rgba(248,247,255,.82);}
+}
+.academyMenu{
+  background:linear-gradient(145deg,rgba(249,247,255,.92),rgba(231,225,255,.84));
+  border-color:rgba(217,198,255,.88);
+}
+.menuTitle{color:#2b1c59;}
+.menuTitle small{color:#76649c;}
+.nav{transition:background .2s ease,border-color .2s ease,box-shadow .2s ease,color .2s ease,transform .2s ease;}
+.nav:not(.active):hover{border-color:rgba(184,155,255,.92);box-shadow:0 10px 24px rgba(81,54,145,.16),0 0 18px rgba(120,197,255,.14);}
+.nav.active{border-color:var(--cosmic-gold);box-shadow:0 0 0 2px rgba(255,229,164,.18),0 0 22px rgba(145,113,255,.32),0 10px 24px rgba(41,18,89,.18);}
+.nav.logoutNav{border-color:rgba(223,157,199,.62);}
+.nav.logoutNav .navIcon{background:linear-gradient(145deg,#fff2fa,#f0d9ff);}
+.nav.logoutNav .navIcon svg{stroke:#a33f83;}
+.nav.logoutNav .navLabel{color:#87416f;}
+.primary,.soft,.topIcon,.mobileNav button{transition:background .2s ease,border-color .2s ease,box-shadow .2s ease,transform .16s ease;}
+.primary:hover,.soft:hover,.topIcon:hover{box-shadow:0 0 20px rgba(160,129,255,.24),0 8px 20px rgba(37,20,91,.16);}
+.primary:active,.soft:active,.topIcon:active,.mobileNav button:active{transform:translateY(1px) scale(.985);}
+.page:not(.hidden){animation:starfallPageEnter .28s ease both;}
+@keyframes starfallPageEnter{from{opacity:0;transform:translate3d(0,7px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+
+@media(max-width:900px){
+  .mobileNav{border-color:rgba(218,199,255,.86);box-shadow:0 -8px 30px rgba(26,15,83,.25),0 0 22px rgba(148,118,255,.14);}
+}
+@media(max-width:600px){
+  body,body.dark{background-image:none!important;background-color:#11164f!important;background-attachment:scroll!important;}
+  #academyEffects::before{
+    content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+    background-image:linear-gradient(180deg,rgba(14,15,67,.02),rgba(22,19,83,.05) 48%,rgba(12,14,63,.20)),url("/assets/background/starfall-mobile.jpg");
+    background-repeat:no-repeat;background-position:center top!important;background-size:cover!important;z-index:0!important;transform:translateZ(0);
+  }
+  #academyEffects .cloud-layer-1{opacity:.055;}
+  #academyEffects .cloud-layer-2{opacity:.035;}
+  #academyEffects .cloud-layer-3{display:none;}
+  #academyEffects .star-field{opacity:.72;}
+  .shell{padding:max(10px,env(safe-area-inset-top,0px)) 10px calc(112px + env(safe-area-inset-bottom,0px))!important;}
+  .academyTop{min-height:56px;padding:5px 3px 10px!important;}
+  .brandText b{color:#fff8ff;text-shadow:0 1px 8px rgba(31,13,78,.72);}
+  .brandText small{color:#e7d9ff;text-shadow:0 1px 6px rgba(31,13,78,.72);}
+  #appView .layout{margin-top:clamp(158px,19vh,184px)!important;}
+  .content.card{padding:14px;border-radius:22px;background:rgba(249,247,255,.86);border-color:rgba(231,218,255,.88);}
+  .sectionRibbon{border-color:rgba(231,214,255,.9);box-shadow:0 7px 18px rgba(34,19,92,.15);}
+  .mobileNav{
+    bottom:max(8px,env(safe-area-inset-bottom,0px))!important;
+    padding:7px 9px!important;height:68px!important;min-height:68px;
+    background:linear-gradient(120deg,rgba(35,20,104,.96),rgba(82,47,155,.95));
+    border:1px solid rgba(224,205,255,.86);
+    -webkit-backdrop-filter:blur(14px) saturate(1.15);backdrop-filter:blur(14px) saturate(1.15);
+    scrollbar-width:none;
+  }
+  .mobileNav::-webkit-scrollbar{display:none;}
+  .mobileNav button{flex:0 0 76px!important;min-width:76px!important;width:76px;height:50px!important;}
+  .mobileNav button[data-logout]{border-color:rgba(255,181,216,.62);background:rgba(255,226,245,.13);}
+  .mobileNav button[data-logout] svg{stroke:#ffd4ec;}
+  .mobileNav button[data-logout] span{color:#ffe9f5;}
+}
+@media(max-width:390px){
+  #appView .layout{margin-top:clamp(158px,19vh,176px)!important;}
+  .mobileNav button{flex-basis:70px!important;min-width:70px!important;width:70px;}
+}
+@media(prefers-reduced-motion:reduce){
+  #academyEffects .star-field:before,#academyEffects .star-field:after,.cosmic-star,.page:not(.hidden){animation:none!important;}
+  .cosmic-star{opacity:.55;}
+  .primary:active,.soft:active,.topIcon:active,.mobileNav button:active{transform:none;}
+}
+
+/* The fixed quick menu is mobile/tablet only; desktop uses the full sidebar. */
+.mobileNav{display:none;}
+@media(max-width:900px){.mobileNav{display:flex;}}

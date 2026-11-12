@@ -33,7 +33,7 @@ const msg=(s,duration=3000)=>{
   },Math.max(0,Number(duration)||3000));
 };
 function showAuth(){ $('#authView').classList.remove('hidden');$('#appView').classList.add('hidden');$('#mobileNav').classList.add('hidden');}
-function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden');$('#mobileNav').classList.remove('hidden');$('#welcomeName').textContent='Xin chào, '+user.displayName+'!';$$('.adminOnly').forEach(x=>x.classList.toggle('hidden',user.role!=='admin'));}
+function showApp(){ $('#authView').classList.add('hidden');$('#appView').classList.remove('hidden');$('#mobileNav').classList.remove('hidden');$$('.adminOnly').forEach(x=>x.classList.toggle('hidden',user.role!=='admin'));}
 function money(n){return Number(n||0).toLocaleString('vi-VN')}
 function selected(){return characters.find(c=>Number(c.id)===activeChar)||characters[0]||null}
 async function refresh(){const me=await api('/me');user=me.user;api('/presence',{method:'POST',body:'{}'}).catch(()=>{});characters=me.characters;if(!activeChar&&characters[0])activeChar=Number(characters[0].id);if(!characters.some(c=>Number(c.id)===activeChar))activeChar=Number(characters[0]?.id||0);localStorage.setItem('tinh_tu_oc',activeChar);overview=await api('/overview');showApp();render();loadMailbox().catch(()=>{});}
@@ -56,15 +56,27 @@ $$('[data-explore]').forEach(b=>b.onclick=async()=>{if(!c)return msg('Hãy tạo
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 $$('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;$$('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));$('#displayWrap').classList.toggle('hidden',tab!=='register');$('#authSubmit').textContent=tab==='login'?'Bước vào học viện ✨':'Tạo tài khoản ✨';});
 $('#authForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),body=Object.fromEntries(f);try{const d=await api(tab==='login'?'/login':'/register',{method:'POST',body:JSON.stringify(body)});token=d.token;localStorage.setItem('tinh_tu_token',token);$('#authMsg').textContent='';await refresh();}catch(err){$('#authMsg').textContent=err.message;}};
-$('#logoutBtn').onclick=async()=>{try{await api('/logout',{method:'POST'});}catch{}token='';localStorage.removeItem('tinh_tu_token');showAuth();};
+const performLogout=async()=>{
+  const logoutButtons=$$('[data-logout]');
+  logoutButtons.forEach(button=>{button.disabled=true;});
+  try{await api('/logout',{method:'POST'});}catch{}
+  token='';user=null;localStorage.removeItem('tinh_tu_token');showAuth();
+  logoutButtons.forEach(button=>{button.disabled=false;});
+};
+document.addEventListener('click',event=>{
+  const logoutButton=event.target.closest('[data-logout]');
+  if(!logoutButton)return;
+  event.preventDefault();
+  performLogout();
+});
 $('#createChar').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{const d=await api('/characters',{method:'POST',body:JSON.stringify(f)});activeChar=Number(d.character.id);e.target.reset();await refresh();msg('Đã tạo OC thành công!');}catch(err){msg(err.message)}};
-$$('[data-page]').forEach(b=>b.onclick=()=>{const page=b.dataset.page;$$('.page').forEach(x=>x.classList.toggle('hidden',x.id!==page));$$('.nav').forEach(x=>x.classList.toggle('active',x.dataset.page===page));if(page==='inventory')loadInventory();if(page==='rank')loadRank();if(page==='admin')loadAdmin();if(page==='members')loadMembers(true);if(page==='profile')loadProfile();if(page==='mailbox')loadMailbox();if(page==='quests')loadQuests();if(page==='chat')loadChat();});
+$$('[data-page]').forEach(b=>b.onclick=()=>{const page=b.dataset.page;$$('.page').forEach(x=>x.classList.toggle('hidden',x.id!==page));$$('.nav,#mobileNav [data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===page));if(page==='inventory')loadInventory();if(page==='rank')loadRank();if(page==='admin')loadAdmin();if(page==='members')loadMembers(true);if(page==='profile')loadProfile();if(page==='mailbox')loadMailbox();if(page==='quests')loadQuests();if(page==='chat')loadChat();});
 async function uploadAvatar(file){if(!file)throw Error('Bạn chưa chọn ảnh.');if(!/^image\/(png|jpeg|webp|gif|heic|heif)$/.test(file.type))throw Error('Định dạng ảnh không được hỗ trợ.');if(file.size>1024*1024)throw Error('Ảnh phải nhỏ hơn hoặc bằng 1 MB.');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Không đọc được file ảnh.'));reader.readAsDataURL(file);});const d=await api('/media/avatar',{method:'POST',body:JSON.stringify({data})});return d.url;}
 function memberCard(m,kind='member'){const status=m.online?'<span class="presence online">● Đang online</span>':'<span class="presence offline">● Offline</span>';let action='';if(kind==='member'){action=m.is_friend?'<span class="friendTag">✓ Bạn bè</span>':m.request_sent?'<span class="muted">Đã gửi lời mời</span>':m.request_received?'<span class="muted">Có lời mời đang chờ bạn</span>':`<button class="soft" data-addfriend="${m.id}">＋ Kết bạn</button>`;}else if(kind==='friend'){action=`<button class="soft dangerText" data-unfriend="${m.id}">Hủy kết bạn</button>`;}return `<article class="memberCard">${avatarHtml(m.avatar,'memberAvatar')}<div class="memberInfo"><b>${esc(m.display_name)}</b><small>@${esc(m.username)}</small>${status}<p>${esc(m.bio||'Chưa có giới thiệu.')}</p><small>Tham gia: ${m.created_at?new Date(m.created_at).toLocaleDateString('vi-VN'):'—'}</small>${action}</div></article>`;}
 async function loadMembers(reset=false){try{if(reset){memberOffset=0;memberSearch=$('#memberSearch')?.value.trim()||'';}const d=await api(`/members?search=${encodeURIComponent(memberSearch)}&limit=24&offset=${memberOffset}`);const html=d.members.map(m=>memberCard(m)).join('');$('#memberList').innerHTML=reset?html:$('#memberList').innerHTML+html;$('#memberMore').classList.toggle('hidden',d.members.length<24);memberOffset+=d.members.length;const f=await api('/friends');$('#friendRequests').innerHTML=[...f.incoming.map(x=>`<article class="memberCard">${avatarHtml(x.avatar,'memberAvatar')}<div class="memberInfo"><b>${esc(x.display_name)}</b><small>@${esc(x.username)}</small><div class="row"><button class="primary" data-accept="${x.id}">Chấp nhận</button><button class="soft" data-reject="${x.id}">Từ chối</button></div></div></article>`),...f.outgoing.map(x=>`<article class="tile"><b>Đã gửi đến ${esc(x.display_name)}</b><small>@${esc(x.username)}</small></article>`)].join('')||'<p>Không có lời mời nào.</p>';$('#friendList').innerHTML=f.friends.map(x=>memberCard(x,'friend')).join('')||'<p>Bạn chưa có bạn bè. Hãy tìm thành viên để kết bạn nhé!</p>';bindSocialActions();}catch(e){msg(e.message);}}
 function bindSocialActions(){ $$('[data-addfriend]').forEach(b=>b.onclick=async()=>{try{await api(`/friends/request/${b.dataset.addfriend}`,{method:'POST',body:'{}'});msg('Đã gửi lời mời kết bạn.');await loadMembers(true);}catch(e){msg(e.message)}});$$('[data-accept],[data-reject]').forEach(b=>b.onclick=async()=>{try{await api(`/friends/respond/${b.dataset.accept||b.dataset.reject}`,{method:'POST',body:JSON.stringify({action:b.dataset.accept?'accept':'reject'})});msg(b.dataset.accept?'Đã kết bạn thành công.':'Đã từ chối lời mời.');await loadMembers(true);}catch(e){msg(e.message)}});$$('[data-unfriend]').forEach(b=>b.onclick=async()=>{if(!confirm('Bạn có chắc muốn hủy kết bạn?'))return;try{await api(`/friends/${b.dataset.unfriend}`,{method:'DELETE'});await loadMembers(true);msg('Đã hủy kết bạn.');}catch(e){msg(e.message)}});}
 async function loadProfile(){try{const d=await api('/me');user=d.user;profileAvatar=user.avatar||'🌟';$('#profileAvatarPreview').innerHTML=avatarHtml(profileAvatar,'profileAvatarImg');$('#profileUsername').value=user.username;$('#profileCreated').value=new Date(user.createdAt).toLocaleDateString('vi-VN');$('#profileForm [name="displayName"]').value=user.displayName;$('#profileForm [name="bio"]').value=user.bio||'';$('#avatarLibrary').innerHTML=avatarChoices.map(a=>`<button type="button" class="avatarChoice ${profileAvatar===a?'selected':''}" data-avatar="${a}">${a}</button>`).join('');$$('[data-avatar]').forEach(b=>b.onclick=()=>{profileAvatar=b.dataset.avatar;$('#profileAvatarPreview').innerHTML=avatarHtml(profileAvatar,'profileAvatarImg');$$('[data-avatar]').forEach(x=>x.classList.toggle('selected',x===b));});const friends=await api('/friends');$('#profileFriends').innerHTML=friends.friends.map(x=>memberCard(x,'friend')).join('')||'<p>Chưa có bạn bè.</p>';bindSocialActions();}catch(e){msg(e.message)}}
-$('#memberSearchBtn')?.addEventListener('click',()=>loadMembers(true));$('#memberSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadMembers(true);}});$('#memberMore')?.addEventListener('click',()=>loadMembers(false));$('#profileAvatarFile')?.addEventListener('change',async e=>{try{const url=await uploadAvatar(e.target.files[0]);profileAvatar=url;$('#profileAvatarPreview').innerHTML=avatarHtml(url,'profileAvatarImg');$$('[data-avatar]').forEach(x=>x.classList.remove('selected'));}catch(err){msg(err.message)}finally{e.target.value='';}});$('#profileForm')?.addEventListener('submit',async e=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.target));const d=await api('/profile',{method:'PATCH',body:JSON.stringify({...f,avatar:profileAvatar})});user=d.user;$('#welcomeName').textContent='Xin chào, '+user.displayName+'!';msg('Đã lưu hồ sơ cá nhân.');}catch(err){msg(err.message)}});
+$('#memberSearchBtn')?.addEventListener('click',()=>loadMembers(true));$('#memberSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadMembers(true);}});$('#memberMore')?.addEventListener('click',()=>loadMembers(false));$('#profileAvatarFile')?.addEventListener('change',async e=>{try{const url=await uploadAvatar(e.target.files[0]);profileAvatar=url;$('#profileAvatarPreview').innerHTML=avatarHtml(url,'profileAvatarImg');$$('[data-avatar]').forEach(x=>x.classList.remove('selected'));}catch(err){msg(err.message)}finally{e.target.value='';}});$('#profileForm')?.addEventListener('submit',async e=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.target));const d=await api('/profile',{method:'PATCH',body:JSON.stringify({...f,avatar:profileAvatar})});user=d.user;msg('Đã lưu hồ sơ cá nhân.');}catch(err){msg(err.message)}});
 setInterval(()=>{if(token){api('/presence',{method:'POST',body:'{}'}).catch(()=>{});if(!$('#members')?.classList.contains('hidden'))loadMembers(true);}},60000);
 async function loadInventory(){const c=selected();if(!c)return;try{const d=await api(`/characters/${c.id}/inventory`);$('#inventoryList').innerHTML=d.items.map(i=>`<article class="tile"><div class="icon">${i.icon}</div><h3>${esc(i.name)} ×${i.quantity}</h3><p>${esc(i.description)}</p><p class="effectText">${effectText(i.effect)}</p>${i.category==='consumable'?`<button class="soft" data-use="${i.id}">Sử dụng</button>`:['weapon','armor','accessory'].includes(i.category)?`<button class="soft" data-equip="${i.id}">${i.equipped?'Tháo trang bị':'Trang bị'}</button>`:''}</article>`).join('')||'<p>Túi đồ đang trống.</p>';$$('[data-use]').forEach(b=>b.onclick=async()=>{try{await api(`/characters/${c.id}/inventory/${b.dataset.use}/use`,{method:'POST',body:'{}'});await loadInventory();await refresh();msg('Đã sử dụng vật phẩm.');}catch(e){msg(e.message)}});$$('[data-equip]').forEach(b=>b.onclick=async()=>{try{await api(`/characters/${c.id}/inventory/${b.dataset.equip}/equip`,{method:'POST',body:'{}'});await loadInventory();await refresh();msg('Đã cập nhật trang bị.');}catch(e){msg(e.message)}});}catch(e){msg(e.message)}}
 function effectText(effect){const e=effect||{},labels={hp:'HP',mp:'MP',exp:'EXP',atk:'Công kích',def:'Phòng ngự',spd:'Tốc độ',intelligence:'Trí tuệ',luk:'May mắn'};const bits=Object.entries(e).filter(([k,v])=>labels[k]&&Number(v)!==0).map(([k,v])=>`${labels[k]} +${money(v)}`);return bits.length?'Hiệu quả: '+bits.join(' · '):'Chưa có hiệu ứng';}
@@ -118,6 +130,7 @@ if(localStorage.getItem('tinh_tu_theme')==='dark')document.body.classList.add('d
   window.__academyEffectsInitialized=true;
   const root=document.getElementById('academyEffects');
   if(!root)return;
+  const starField=root.querySelector('.star-field');
   const petalField=root.querySelector('.petal-field');
   const lotusField=root.querySelector('.lotus-field');
   const spiritField=root.querySelector('.spirit-particles');
@@ -133,13 +146,28 @@ if(localStorage.getItem('tinh_tu_theme')==='dark')document.body.classList.add('d
     return cores<=4||memory<=2;
   };
   const profile=()=>{
-    if(reduced.matches)return {petals:0,lotus:0,particles:0,key:'reduced'};
+    if(reduced.matches)return {stars:0,petals:0,lotus:0,particles:0,key:'reduced'};
     const weak=isWeakDevice();
     const mobile=window.innerWidth<=600;
-    if(mobile)return weak?{petals:6,lotus:2,particles:12,key:'mobile-weak'}:{petals:10,lotus:4,particles:16,key:'mobile'};
-    return weak?{petals:10,lotus:4,particles:20,key:'desktop-weak'}:{petals:16,lotus:6,particles:30,key:'desktop'};
+    if(mobile)return weak?{stars:12,petals:4,lotus:1,particles:8,key:'mobile-weak'}:{stars:20,petals:7,lotus:2,particles:12,key:'mobile'};
+    return weak?{stars:22,petals:7,lotus:3,particles:14,key:'desktop-weak'}:{stars:34,petals:10,lotus:4,particles:20,key:'desktop'};
   };
   const clearField=(field)=>{while(field.firstChild)field.removeChild(field.firstChild)};
+  const makeStars=(count)=>{
+    clearField(starField);
+    for(let i=0;i<count;i++){
+      const star=document.createElement('span');
+      star.className='cosmic-star'+(i%7===0?' is-sparkle':'');
+      star.style.left=`${rand(1,99)}%`;
+      star.style.top=`${rand(2,98)}%`;
+      star.style.setProperty('--star-size',`${rand(1,2.8).toFixed(2)}px`);
+      star.style.setProperty('--star-glow',`${rand(4,10).toFixed(1)}px`);
+      star.style.setProperty('--star-opacity',rand(.25,.82).toFixed(2));
+      star.style.setProperty('--star-duration',`${rand(2.8,6.8).toFixed(2)}s`);
+      star.style.setProperty('--star-delay',`${rand(-7,0).toFixed(2)}s`);
+      starField.appendChild(star);
+    }
+  };
   const makePetals=(count)=>{
     clearField(petalField);
     for(let i=0;i<count;i++){
@@ -181,10 +209,13 @@ if(localStorage.getItem('tinh_tu_theme')==='dark')document.body.classList.add('d
     const p=profile();
     if(p.key===activeProfile)return;
     activeProfile=p.key;
-    makePetals(p.petals);makeLotus(p.lotus);makeParticles(p.particles);
+    makeStars(p.stars);makePetals(p.petals);makeLotus(p.lotus);makeParticles(p.particles);
   };
   const onMotionChange=()=>{activeProfile='';apply()};
+  const onResize=()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(apply,180);};
   reduced.addEventListener?.('change',onMotionChange);
-  window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(apply,180)},{passive:true});
+  if(!reduced.addEventListener)reduced.addListener?.(onMotionChange);
+  window.addEventListener('resize',onResize,{passive:true});
+  window.addEventListener('pagehide',()=>clearTimeout(resizeTimer),{once:true});
   apply();
 })();

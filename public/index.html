@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#263f36"><meta name="description" content="Học Viện Thiên Tinh — thế giới huyền bí phong cách thủy mặc."><title>Học Viện Thiên Tinh 星辰學院</title><link rel="stylesheet" href="/style.css?v=1.6-starfall-symphony"></head>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#11164f"><meta name="description" content="Học Viện Thiên Tinh — Starfall Symphony, học viện fantasy giữa ngân hà."><title>Học Viện Thiên Tinh 星辰學院</title><link rel="stylesheet" href="/style.css?v=1.7-starfall-symphony"></head>
 <body>
 <svg class="iconDefs" aria-hidden="true" focusable="false"><defs>
 <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8v8.2a2 2 0 0 1-2 2h-4.8v-6.2H9.8V21H5a2 2 0 0 1-2-2z"/><path d="M8 21v-6.2h8V21"/></symbol>
@@ -15,9 +15,11 @@
 <symbol id="i-map" viewBox="0 0 24 24"><path d="m4 5 6-2 4 2 6-2v16l-6 2-4-2-6 2z"/><path d="M10 3v16M14 5v16"/></symbol>
 <symbol id="i-rank" viewBox="0 0 24 24"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9L9.5 8z"/><path d="M7 20h10"/></symbol>
 <symbol id="i-admin" viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.3 8-8 10-4.7-2-8-5-8-10V6z"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><path d="M14 16l5-4-5-4M19 12H9"/></symbol>
 </defs></svg>
 
 <div id="academyEffects" aria-hidden="true">
+  <div class="star-field" aria-hidden="true"></div>
   <div class="cloud-layer cloud-layer-1"></div>
   <div class="cloud-layer cloud-layer-2"></div>
   <div class="cloud-layer cloud-layer-3"></div>
@@ -40,7 +42,6 @@
 <div class="tabs"><button data-tab="login" class="active">Đăng nhập</button><button data-tab="register">Đăng ký</button></div>
 <form id="authForm"><label>Tên đăng nhập<input name="username" minlength="3" maxlength="24" required autocomplete="username"></label><label id="displayWrap" class="hidden">Tên hiển thị<input name="displayName" maxlength="60"></label><label>Mật khẩu<input name="password" type="password" minlength="10" required autocomplete="current-password"></label><button class="primary" type="submit" id="authSubmit">Bước vào học viện ✨</button></form><p id="authMsg" class="msg"></p></section>
 <section id="appView" class="hidden">
-<div class="welcome card"><div><small>HỌC VIÊN ĐANG ĐĂNG NHẬP</small><h1 id="welcomeName">Xin chào!</h1><p>Hãy viết nên câu chuyện của riêng bạn.</p></div><button id="logoutBtn" class="soft">Đăng xuất</button></div>
 <div class="layout"><aside class="sidebar academyMenu card">
   <div class="menuTitle"><span class="titleSeal">✦</span><div><strong>HỌC VIỆN</strong><small>ĐIỀU HƯỚNG</small></div></div>
   <div class="navGrid">
@@ -57,6 +58,7 @@
     <button data-page="map" class="nav"><span class="navIcon"><svg><use href="#i-map"/></svg></span><span class="navLabel">Khám phá</span></button>
     <button data-page="rank" class="nav"><span class="navIcon"><svg><use href="#i-rank"/></svg></span><span class="navLabel">Thành tích</span></button>
     <button data-page="admin" class="nav adminOnly hidden"><span class="navIcon"><svg><use href="#i-admin"/></svg></span><span class="navLabel">Quản trị</span></button>
+    <button type="button" data-logout class="nav logoutNav" aria-label="Đăng xuất"><span class="navIcon"><svg><use href="#i-logout"/></svg></span><span class="navLabel">Đăng xuất</span></button>
   </div>
 </aside>
 <div class="content card">
@@ -86,5 +88,6 @@
   <button data-page="inventory"><svg><use href="#i-bag"/></svg><span>Túi đồ</span></button>
   <button data-page="map"><svg><use href="#i-map"/></svg><span>Khám phá</span></button>
   <button data-page="rank"><svg><use href="#i-rank"/></svg><span>Thành tích</span></button>
+  <button type="button" data-logout aria-label="Đăng xuất"><svg><use href="#i-logout"/></svg><span>Đăng xuất</span></button>
 </nav>
 <footer>星辰學院 · DREAM AMONG THE STARS</footer></div><script src="/app.js" defer></script></body></html>
