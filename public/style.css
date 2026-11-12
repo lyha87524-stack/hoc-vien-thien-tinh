@@ -618,3 +618,34 @@ body:after{
 /* The fixed quick menu is mobile/tablet only; desktop uses the full sidebar. */
 .mobileNav{display:none;}
 @media(max-width:900px){.mobileNav{display:flex;}}
+
+/* Dashboard: selected OC portrait, refreshed with the active character data */
+.dashboardOcPreview{display:flex;align-items:center;gap:14px;margin:14px 0 16px;padding:12px 16px;border:1px solid rgba(157,133,224,.34);border-radius:20px;background:linear-gradient(115deg,rgba(255,255,255,.82),rgba(230,225,255,.72));box-shadow:0 8px 24px rgba(58,48,130,.10);min-width:0}
+.dashboardOcPreview.hidden{display:none}
+.dashboardOcVisual{width:76px;height:76px;flex:0 0 76px;display:grid;place-items:center;overflow:hidden;border-radius:18px;background:linear-gradient(145deg,#e9ddff,#d9edff);border:2px solid rgba(255,255,255,.95);box-shadow:0 3px 12px rgba(73,55,151,.18);font-size:42px}
+.dashboardOCImage{width:100%;height:100%;object-fit:cover;display:block}
+.dashboardOcMeta{display:flex;flex-direction:column;gap:4px;min-width:0;color:#30245f}
+.dashboardOcMeta small{font-size:10px;letter-spacing:.16em;font-weight:800;color:#7766a9}
+.dashboardOcMeta strong{font-size:17px;overflow-wrap:anywhere}
+.dashboardOcMeta span{font-size:12px;color:#71658f}
+@media(max-width:520px){.dashboardOcPreview{padding:10px 12px;gap:12px}.dashboardOcVisual{width:68px;height:68px;flex-basis:68px;border-radius:16px}.dashboardOcMeta strong{font-size:16px}}
+
+/* Starfall OC avatar orbit: one lightweight CSS animation per visible OC avatar. */
+.ocAvatarOrbit{--oc-glow:#a78bfa;position:relative;isolation:isolate;display:inline-grid;place-items:center;flex:0 0 auto;width:78px;height:78px;padding:5px;border-radius:20px;vertical-align:middle;}
+.ocAvatarOrbit::before{content:"";position:absolute;inset:1px;border:2px solid transparent;border-radius:18px;background:conic-gradient(from 0deg,var(--oc-glow),rgba(255,255,255,.96),var(--oc-glow),rgba(120,160,255,.18),var(--oc-glow)) border-box;-webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;filter:drop-shadow(0 0 5px var(--oc-glow));animation:ocOrbitSpin 7s linear infinite;pointer-events:none;}
+.ocAvatarOrbit::after{content:"✦";position:absolute;z-index:2;top:-5px;right:-4px;width:17px;height:17px;display:grid;place-items:center;border-radius:5px;color:#fff;background:var(--oc-glow);font-size:10px;line-height:1;box-shadow:0 0 10px var(--oc-glow);animation:ocOrbitTwinkle 2.8s ease-in-out infinite;pointer-events:none;}
+.ocAvatarPortrait{position:relative;z-index:1;display:block;width:100%;height:100%;min-width:0;object-fit:cover;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.88);background:linear-gradient(145deg,#e9ddff,#d9edff);box-shadow:0 2px 12px color-mix(in srgb,var(--oc-glow) 30%,transparent);}
+span.ocAvatarPortrait{display:grid;place-items:center;font-size:38px;}
+.dashboardOcVisual{width:82px;height:82px;}
+.ocAvatarCardFrame{width:68px;height:68px;border-radius:18px;}
+.ocAvatarCardFrame::before{border-radius:16px;}
+.ocAvatarCardFrame .ocAvatarPortrait{border-radius:12px;}
+.ocCardIcon{display:flex!important;align-items:center;justify-content:center;overflow:visible!important;background:transparent!important;border:0!important;box-shadow:none!important;}
+.ocAuraTier{display:inline-flex;align-self:flex-start;margin-top:3px;padding:3px 8px;border-radius:999px;border:1px solid color-mix(in srgb,var(--oc-glow,#a78bfa) 48%,transparent);background:color-mix(in srgb,var(--oc-glow,#a78bfa) 13%,transparent);color:var(--oc-glow,#a78bfa);font-size:10px;font-style:normal;font-weight:800;letter-spacing:.04em;}
+@keyframes ocOrbitSpin{to{transform:rotate(360deg)}}
+@keyframes ocOrbitTwinkle{0%,100%{opacity:.68;transform:scale(.88) rotate(0)}50%{opacity:1;transform:scale(1.12) rotate(18deg)}}
+@media(max-width:520px){.ocAvatarOrbit.dashboardOcVisual{width:74px;height:74px;flex-basis:74px}.ocAvatarCardFrame{width:64px;height:64px}}
+@media(prefers-reduced-motion:reduce){.ocAvatarOrbit::before,.ocAvatarOrbit::after{animation:none!important}}
+/* Ensure the rotating frame is never clipped by the legacy dashboard avatar rule. */
+.ocAvatarOrbit.dashboardOcVisual{display:inline-grid;overflow:visible;border:0;background:transparent;box-shadow:none;padding:5px;}
+.ocCardIcon{width:78px;height:78px;min-width:78px;}
