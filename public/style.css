@@ -178,3 +178,144 @@ footer{color:#fff1ce;text-shadow:0 2px 8px rgba(28,11,59,.8);letter-spacing:4px}
 .rankAvatarFallback{display:grid;place-items:center;font-size:22px;object-fit:initial}
 body.dark .rankAvatar{background:#2b3a32;border-color:#c5aa70}
 @media(max-width:600px){.rankTable{min-width:650px}.rankAvatar{width:38px;height:38px;flex-basis:38px}}
+
+
+/* ===== STARFALL SYMPHONY RESPONSIVE BACKGROUNDS ===== */
+/* Desktop is the default; mobile switches to a portrait composition. */
+body {
+  background-image:
+    linear-gradient(180deg, rgba(16, 18, 65, .10), rgba(12, 17, 70, .18)),
+    url('/assets/background/starfall-characters-desktop.webp');
+  background-position: center top;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+body.dark {
+  background-image:
+    linear-gradient(180deg, rgba(8, 10, 38, .30), rgba(8, 10, 38, .42)),
+    url('/assets/background/starfall-characters-desktop.webp');
+  background-position: center top;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+@media (max-width: 720px) {
+  body {
+    background-image:
+      linear-gradient(180deg, rgba(16, 18, 65, .08), rgba(12, 17, 70, .18)),
+      url('/assets/background/starfall-characters-mobile.webp');
+    background-position: center top;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: scroll;
+  }
+  body.dark {
+    background-image:
+      linear-gradient(180deg, rgba(8, 10, 38, .28), rgba(8, 10, 38, .40)),
+      url('/assets/background/starfall-characters-mobile.webp');
+    background-position: center top;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: scroll;
+  }
+}
+
+
+/* ===== MOBILE STARFALL LAYOUT: background artwork + glass dashboard ===== */
+@media (max-width: 720px) {
+  html, body { min-height:100%; }
+  body {
+    background-color:#2638a5;
+    background-image:url('/assets/background/starfall-characters-mobile.webp') !important;
+    background-position:center top;
+    background-size:100% 100vh;
+    background-repeat:no-repeat;
+    background-attachment:fixed;
+  }
+  body:after { background:linear-gradient(180deg,rgba(17,18,77,.02),rgba(27,22,99,.06) 44%,rgba(43,24,111,.16)); }
+  #academyEffects { opacity:.12; }
+  .shell { padding:calc(7px + env(safe-area-inset-top)) 9px calc(96px + env(safe-area-inset-bottom)); }
+  .top { min-height:52px; padding:5px 2px 0; align-items:center; }
+  .academyBrand { gap:9px; }
+  .brandCrest { width:42px; height:42px; flex:0 0 42px; border-radius:14px; }
+  .brandText b { font-size:12px; letter-spacing:1px; color:#fff9ff; text-shadow:0 2px 8px #24105f; }
+  .brandText small { font-size:7px; letter-spacing:1.5px; color:#f5eaff; text-shadow:0 2px 7px #24105f; }
+  .topIcon { width:44px; height:44px; border-radius:14px; }
+  /* The welcome banner occupies the same visual position as the dashboard ribbon. */
+  .welcome.card {
+    margin-top:clamp(128px, 24vh, 190px);
+    margin-bottom:12px;
+    min-height:76px;
+    padding:12px 13px;
+    border-radius:23px;
+    display:flex;
+    gap:10px;
+    background:linear-gradient(110deg,rgba(79,37,158,.94),rgba(91,47,186,.88) 55%,rgba(65,51,166,.90));
+    border:2px solid rgba(241,203,255,.88);
+    box-shadow:0 10px 30px rgba(38,15,108,.30),0 0 20px rgba(190,160,255,.36),inset 0 0 18px rgba(255,255,255,.16);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  }
+  .welcome > div { display:flex; flex-direction:column; justify-content:center; min-width:0; }
+  .welcome small { display:block; font-size:8px; letter-spacing:1.7px; color:#f1e6ff; }
+  .welcome h1 { margin:1px 0 0; font-size:0; line-height:1.15; }
+  .welcome h1:after { content:'Bảng tin học viện'; font-size:25px; color:#fff9f0; text-shadow:0 2px 8px rgba(23,8,67,.45); }
+  .welcome p { display:none; }
+  .welcome .soft { flex:0 0 auto; padding:11px 14px; border-radius:15px; background:linear-gradient(180deg,#fffdf5,#f8eaff); border:1px solid #fff2c7; color:#382078; font-size:13px; }
+  .layout { display:block; margin-top:0; }
+  .academyMenu { display:none !important; }
+  .content.card {
+    min-height:0; max-height:none; overflow:visible;
+    padding:13px 11px 18px; border-radius:25px;
+    background:linear-gradient(145deg,rgba(248,244,255,.86),rgba(225,220,255,.80));
+    border:2px solid rgba(238,221,255,.92);
+    box-shadow:0 12px 34px rgba(40,22,119,.20),inset 0 0 22px rgba(255,255,255,.36);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  }
+  .content.card:after { border-color:rgba(255,255,255,.34); }
+  #dashboard > .sectionRibbon { display:none; }
+  #charPicker { display:block; margin:0 0 10px; }
+  #charPicker select {
+    width:100%; min-height:48px; margin:0; padding:10px 14px;
+    border-radius:17px; border:1px solid rgba(255,255,255,.9);
+    background:linear-gradient(110deg,rgba(255,255,255,.91),rgba(232,228,255,.88));
+    color:#25165f; font-weight:800; box-shadow:0 5px 14px rgba(64,45,139,.12);
+  }
+  #stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:10px 0 12px; }
+  #stats .resourceBars { grid-column:1/-1; display:grid; grid-template-columns:1fr; gap:9px; margin:0; }
+  #stats .resource { padding:12px 13px; border-radius:18px; border:1px solid rgba(255,255,255,.92); box-shadow:0 5px 14px rgba(68,47,143,.12); }
+  #stats .resource:first-child { background:linear-gradient(110deg,rgba(255,239,246,.96),rgba(246,222,242,.92)); }
+  #stats .resource:nth-child(2) { background:linear-gradient(110deg,rgba(234,244,255,.96),rgba(222,231,255,.94)); }
+  #stats .resourceHead { margin-bottom:8px; font-size:13px; color:#26165f; }
+  #stats .resourceHead strong { font-size:13px; color:#21145d; }
+  #stats .bar { height:10px; background:rgba(93,80,151,.14); }
+  #stats .hpBar { background:linear-gradient(90deg,#f04d85,#db477e); }
+  #stats .mpBar { background:linear-gradient(90deg,#4b9af2,#3979e7); }
+  #stats > .stat {
+    min-height:76px; margin:0; padding:11px 13px; border-radius:17px;
+    background:linear-gradient(145deg,rgba(255,255,255,.94),rgba(234,226,255,.88));
+    border:1px solid rgba(255,255,255,.96); box-shadow:0 5px 14px rgba(64,45,139,.12);
+  }
+  #stats > .stat small { display:block; color:#51318d; font-size:12px; font-weight:700; }
+  #stats > .stat b { display:block; margin-top:2px; color:#21145e; font-size:22px; line-height:1.12; }
+  /* Keep the four headline counters visible like the reference mobile screen. */
+  #stats > .stat:nth-of-type(n+6), #stats > .attributePanel { display:none; }
+  #trainBtn, #dashboard .notice { display:none; }
+  .mobileNav {
+    left:7px; right:7px; bottom:calc(7px + env(safe-area-inset-bottom));
+    height:68px; padding:7px 8px; gap:4px; justify-content:space-between;
+    border:2px solid rgba(237,207,255,.92); border-radius:23px;
+    background:linear-gradient(120deg,rgba(63,25,140,.96),rgba(91,47,181,.94));
+    box-shadow:0 10px 28px rgba(31,14,94,.30),0 0 18px rgba(185,159,255,.35);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  }
+  .mobileNav button { flex:1 1 0; min-width:0; height:52px; padding:3px 2px; gap:2px; border-radius:15px; font-size:9px; }
+  .mobileNav button svg { width:23px; height:23px; }
+  .mobileNav button.active { background:linear-gradient(145deg,rgba(154,103,236,.92),rgba(70,35,154,.96)); border-color:#f4d9ff; box-shadow:0 0 14px rgba(232,204,255,.34); }
+  .page h2 { font-size:22px; }
+}
+@media (max-width:380px) {
+  .welcome h1:after { font-size:22px; }
+  .welcome .soft { padding:10px 11px; font-size:12px; }
+  .mobileNav button { font-size:8px; }
+}
