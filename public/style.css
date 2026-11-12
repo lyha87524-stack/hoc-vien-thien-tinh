@@ -298,3 +298,43 @@ body.dark .rankAvatar{background:#2b3a32;border-color:#c5aa70}
     width: 70px;
   }
 }
+
+
+/* ===== STARFALL SYMPHONY: MOBILE WALLPAPER =====
+   Use the supplied 9:16 artwork as a fixed viewport backdrop on phones.
+   This prevents the image from stretching with the full page height. */
+@media (max-width: 600px) {
+  body,
+  body.dark {
+    background-image: none !important;
+    background-color: #1728a5 !important;
+    background-attachment: scroll !important;
+  }
+
+  #academyEffects {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  #academyEffects::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: url("/assets/background/starfall-mobile.jpg");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+    transform: translateZ(0);
+  }
+
+  /* Keep the original wallpaper bright and recognizable. */
+  #academyEffects .cloud-layer,
+  #academyEffects .petal-field,
+  #academyEffects .lotus-field {
+    opacity: .08;
+  }
+}
